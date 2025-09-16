@@ -17,7 +17,6 @@ class MAAAuto:
     def __init__(self, config_file="/Task/MAA_Auto/config.ini"):
         self.config_file = config_file
         self.config = configparser.ConfigParser()
-        self.load_config()
         
         # 错误计数
         self.error_count = 0
@@ -27,8 +26,14 @@ class MAAAuto:
         self.maa_process = None
         self.is_running = False
         
+        # ADB设备信息
+        self.adb_device = 'localhost:35555'  # 默认设备
+        
         # 设置日志
         self.setup_logging()
+        
+        # 加载配置 (在日志设置之后)
+        self.load_config()
         
     def load_config(self):
         """加载配置文件"""
@@ -38,7 +43,7 @@ class MAAAuto:
         self.config.read(self.config_file)
         
         # 读取配置
-        self.adb_command = self.config.get('MAA', 'adb_command', fallback='adb -s localhost:35555 shell am start -n com.hypergryph.arknights/com.u8.sdk.U8UnityContext')
+        self.adb_command = self.config.get('MAA', 'adb_command', fallback='adb connect localhost:35555 ; adb -s localhost:35555 shell am start -n com.hypergryph.arknights/com.u8.sdk.U8UnityContext')
         self.maa_command = self.config.get('MAA', 'maa_command', fallback='maa roguelike Sami -v')
         self.maa_timeout = int(self.config.get('MAA', 'maa_timeout', fallback=3600))  # 默认1小时超时
         self.run_time_start = int(self.config.get('Schedule', 'run_time_start', fallback=23))
@@ -47,6 +52,13 @@ class MAAAuto:
         self.max_errors = int(self.config.get('Error', 'max_errors', fallback=3))
         self.error_window = int(self.config.get('Error', 'error_window', fallback=600))
         self.webhook_url = self.config.get('Notification', 'webhook_url', fallback='')
+        
+        # 从ADB命令中提取设备ID
+        import re
+        adb_device_match = re.search(r'adb -s ([^ ]+)', self.adb_command)
+        if adb_device_match:
+            self.adb_device = adb_device_match.group(1)
+            self.logger.info(f"从配置中提取ADB设备ID: {self.adb_device}")
         
     def create_default_config(self):
         """创建默认配置文件"""
@@ -223,6 +235,97 @@ class MAAAuto:
                 self.is_running = False
                 self.maa_process = None
     
+    def check_adb_connection(self):
+        """检查ADB连接状态"""
+        try:
+            self.logger.info(f"检查ADB连接状态: {self.adb_device}")
+            
+            # 执行adb devices命令
+            result = subprocess.run(f"adb devices", shell=True, capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                self.logger.error("ADB命令执行失败")
+                return False
+                
+            # 检查设备是否在列表中
+            device_found = False
+            for line in result.stdout.splitlines():
+                if self.adb_device in line and not "offline" in line and not "unauthorized" in line:
+                    if "device" in line:  # 确保设备状态为"device"，而不是"offline"或"unauthorized"
+                        device_found = True
+                        break
+            
+            if not device_found:
+                self.logger.error(f"ADB设备 {self.adb_device} 未连接或状态异常")
+                return False
+            
+            # 验证ADB连接是否可用（通过获取设备属性）
+            check_cmd = f"adb -s {self.adb_device} shell getprop ro.product.model"
+            check_result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            
+            if check_result.returncode != 0 or not check_result.stdout.strip():
+                self.logger.error(f"ADB设备 {self.adb_device} 连接异常")
+                return False
+                
+            self.logger.info(f"ADB设备 {self.adb_device} 连接正常: {check_result.stdout.strip()}")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            self.logger.error("检查ADB连接超时")
+            return False
+        except Exception as e:
+            self.logger.error(f"检查ADB连接时发生错误: {e}")
+            return False
+    
+    def kill_arknights_process(self):
+        """杀死明日方舟进程"""
+        try:
+            self.logger.info("尝试关闭明日方舟进程")
+            
+            # 使用ADB发送命令杀死明日方舟进程
+            kill_cmd = f"adb -s {self.adb_device} shell am force-stop com.hypergryph.arknights"
+            result = subprocess.run(kill_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode != 0:
+                self.logger.error(f"关闭明日方舟进程失败: {result.stderr}")
+                return False
+                
+            self.logger.info("已关闭明日方舟进程")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            self.logger.error("关闭明日方舟进程超时")
+            return False
+        except Exception as e:
+            self.logger.error(f"关闭明日方舟进程时发生错误: {e}")
+            return False
+    
+    def reconnect_adb(self):
+        """重新连接ADB设备"""
+        try:
+            self.logger.info(f"尝试重新连接ADB设备: {self.adb_device}")
+            
+            # 首先断开连接
+            disconnect_cmd = f"adb disconnect {self.adb_device}"
+            subprocess.run(disconnect_cmd, shell=True, capture_output=True, timeout=10)
+            
+            # 然后重新连接
+            connect_cmd = f"adb connect {self.adb_device}"
+            result = subprocess.run(connect_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            
+            if "connected" in result.stdout.lower():
+                self.logger.info(f"ADB设备 {self.adb_device} 已重新连接")
+                return True
+            else:
+                self.logger.error(f"重新连接ADB设备失败: {result.stdout}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error("重新连接ADB设备超时")
+            return False
+        except Exception as e:
+            self.logger.error(f"重新连接ADB设备时发生错误: {e}")
+            return False
+    
     def send_webhook_notification(self, title, message):
         """发送WebHook通知"""
         if not self.webhook_url or '<uid>' in self.webhook_url or '<sendkey>' in self.webhook_url:
@@ -262,8 +365,34 @@ class MAAAuto:
             
             # 检查是否达到错误阈值
             if self.error_count >= self.max_errors:
-                message = f"MAA自动任务在10分钟内出现{self.error_count}次错误，最后一次错误时间: {datetime.fromtimestamp(now)}"
-                self.send_webhook_notification("MAA任务错误警报", message)
+                # 先检查ADB连接是否正常
+                adb_status = self.check_adb_connection()
+                
+                if not adb_status:
+                    # ADB连接异常，发送特定通知
+                    message = f"MAA自动任务在{self.error_window}秒内出现{self.error_count}次错误，ADB连接异常，时间: {datetime.fromtimestamp(now)}"
+                    self.send_webhook_notification("MAA任务ADB连接错误", message)
+                    
+                    # 尝试重新连接ADB
+                    self.logger.info("尝试重新连接ADB...")
+                    reconnect_success = self.reconnect_adb()
+                    
+                    if reconnect_success:
+                        # 杀死明日方舟进程并等待
+                        self.kill_arknights_process()
+                        self.logger.info("等待10秒后重新开始...")
+                        time.sleep(10)
+                else:
+                    # ADB连接正常，但可能游戏进程出现问题
+                    message = f"MAA自动任务在{self.error_window}秒内出现{self.error_count}次错误，最后一次错误时间: {datetime.fromtimestamp(now)}"
+                    self.send_webhook_notification("MAA任务错误警报", message)
+                    
+                    # 尝试杀死并重启明日方舟
+                    self.logger.info("尝试关闭并重启明日方舟...")
+                    self.kill_arknights_process()
+                    self.logger.info("等待10秒后重新开始...")
+                    time.sleep(10)
+                
                 self.error_count = 0  # 重置计数
                 
         else:
@@ -286,9 +415,20 @@ class MAAAuto:
                 # 执行ADB命令启动游戏
                 adb_success = self.run_adb_command()
                 if not adb_success:
-                    self.logger.error("ADB启动失败，跳过MAA执行")
+                    self.logger.error("ADB启动失败，检查ADB连接状态")
+                    
+                    # 检查ADB连接
+                    adb_connection = self.check_adb_connection()
+                    if not adb_connection:
+                        self.logger.error("ADB连接异常，尝试重新连接")
+                        self.reconnect_adb()
+                    else:
+                        self.logger.info("ADB连接正常，尝试杀死明日方舟进程")
+                        self.kill_arknights_process()
+                        
                     self.update_error_count(False)
-                    time.sleep(self.restart_delay)
+                    self.logger.info("等待10秒后重试...")
+                    time.sleep(10)  # 等待10秒后重试
                     continue
                 
                 # 等待游戏启动
