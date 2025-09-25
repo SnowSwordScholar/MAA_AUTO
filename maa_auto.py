@@ -55,13 +55,27 @@ class MAAAuto:
         self.webhook_url = self.config.get('Notification', 'webhook_url', fallback='')
         
         # 公招相关配置
-        self.recruitment_command = self.config.get('Recruitment', 'command', fallback='cd /Task/MAA/Python && uv run python qwq.py -v')
+        self.recruitment_command = self.config.get('Recruitment', 'command', fallback='cd /Task/MAA/Python && /root/.local/bin/uv run python Recruit.py -v')
         self.recruitment_interval_hours = float(self.config.get('Recruitment', 'interval_hours', fallback=9.5))
         self.senior_operator_keyword = self.config.get('Recruitment', 'senior_operator_keyword', fallback='资深干员')
         self.top_operator_keyword = self.config.get('Recruitment', 'top_operator_keyword', fallback='高级资深干员')
         
-        # 公招相关状态
+        # 每日任务相关配置
+        self.start_day_command = self.config.get('DailyTasks', 'start_day_command', fallback='cd /Task/MAA/Python && /root/.local/bin/uv run python StartOneDay.py -v')
+        self.start_day_time_start = float(self.config.get('DailyTasks', 'start_day_time_start', fallback=3.0))
+        self.start_day_time_end = float(self.config.get('DailyTasks', 'start_day_time_end', fallback=3.5))
+        
+        self.end_day_command = self.config.get('DailyTasks', 'end_day_command', fallback='cd /Task/MAA/Python && /root/.local/bin/uv run python EndOneDay.py -v')
+        self.end_day_time_start = float(self.config.get('DailyTasks', 'end_day_time_start', fallback=5.0))
+        self.end_day_time_end = float(self.config.get('DailyTasks', 'end_day_time_end', fallback=5.5))
+        
+        self.task_complete_keyword = self.config.get('DailyTasks', 'task_complete_keyword', fallback='任务完成')
+        self.task_error_keyword = self.config.get('DailyTasks', 'task_error_keyword', fallback='任务失败')
+        
+        # 任务执行状态
         self.last_recruitment_time = None
+        self.last_start_day_date = None  # 记录最后执行清体力任务的日期
+        self.last_end_day_date = None    # 记录最后执行清材料任务的日期
         
         # 从ADB命令中提取设备ID
         adb_device_match = re.search(r'adb -s ([^ ]+)', self.adb_command)
@@ -89,10 +103,20 @@ class MAAAuto:
             'webhook_url': 'https://<uid>.push.ft07.com/send/<sendkey>.send?title={title}&desp={desp}&tags=MAA'
         }
         self.config['Recruitment'] = {
-            'command': 'cd /Task/MAA/Python && uv run python qwq.py -v',
+            'command': 'cd /Task/MAA/Python && /root/.local/bin/uv run python Recruit.py -v',
             'interval_hours': '9.5',
             'senior_operator_keyword': '资深干员',
             'top_operator_keyword': '高级资深干员'
+        }
+        self.config['DailyTasks'] = {
+            'start_day_command': 'cd /Task/MAA/Python && /root/.local/bin/uv run python StartOneDay.py -v',
+            'start_day_time_start': '3.0',
+            'start_day_time_end': '3.5',
+            'end_day_command': 'cd /Task/MAA/Python && /root/.local/bin/uv run python EndOneDay.py -v',
+            'end_day_time_start': '5.0',
+            'end_day_time_end': '5.5',
+            'task_complete_keyword': '任务完成',
+            'task_error_keyword': '任务失败'
         }
         
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
@@ -605,6 +629,174 @@ class MAAAuto:
             # 下一天的开始时间
             next_day = after_time + timedelta(days=1)
             return next_day.replace(hour=self.run_time_start, minute=0, second=0, microsecond=0)
+    
+    def should_run_start_day_task(self):
+        """检查是否应该执行清体力任务（每天3:00-3:30）"""
+        now = datetime.now()
+        current_date = now.date()
+        
+        # 检查今天是否已经执行过
+        if self.last_start_day_date == current_date:
+            return False
+            
+        # 检查是否在执行时间窗口内
+        current_hour = now.hour + now.minute / 60.0
+        return self.start_day_time_start <= current_hour <= self.start_day_time_end
+    
+    def should_run_end_day_task(self):
+        """检查是否应该执行清材料任务（每天5:00-5:30）"""
+        now = datetime.now()
+        current_date = now.date()
+        
+        # 检查今天是否已经执行过
+        if self.last_end_day_date == current_date:
+            return False
+            
+        # 检查是否在执行时间窗口内
+        current_hour = now.hour + now.minute / 60.0
+        return self.end_day_time_start <= current_hour <= self.end_day_time_end
+    
+    def get_random_execution_time(self, start_hour, end_hour):
+        """在指定时间范围内生成随机执行时间"""
+        import random
+        
+        now = datetime.now()
+        today = now.date()
+        
+        # 转换为分钟进行计算
+        start_minutes = int(start_hour * 60)
+        end_minutes = int(end_hour * 60)
+        
+        # 生成随机分钟数
+        random_minutes = random.randint(start_minutes, end_minutes)
+        hour = random_minutes // 60
+        minute = random_minutes % 60
+        
+        # 创建今天的随机时间
+        random_time = datetime.combine(today, datetime.min.time().replace(hour=hour, minute=minute))
+        
+        return random_time
+    
+    def run_daily_task(self, command, task_name):
+        """执行每日任务的通用方法"""
+        # 如果MAA正在运行，先停止它
+        maa_was_running = self.is_running
+        if maa_was_running:
+            self.logger.info(f"{task_name}开始，暂停MAA肉鸽任务")
+            self.stop_maa_command()
+            time.sleep(3)
+        
+        try:
+            # 启动明日方舟
+            self.logger.info(f"{task_name}启动前，先启动明日方舟")
+            adb_success = self.run_adb_command()
+            if not adb_success:
+                self.logger.warning("启动明日方舟失败，但继续执行任务")
+            else:
+                self.logger.info("等待明日方舟启动完成...")
+                time.sleep(10)
+            
+            self.logger.info(f"开始执行{task_name}: {command}")
+            
+            # 执行任务命令
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=1800  # 30分钟超时
+            )
+            
+            # 分析输出日志
+            output_lines = result.stdout + result.stderr
+            self.analyze_daily_task_output(output_lines, task_name)
+            
+            success = False
+            if result.returncode == 0:
+                self.logger.info(f"{task_name}执行成功")
+                success = True
+            else:
+                self.logger.error(f"{task_name}执行失败，返回码: {result.returncode}")
+                error_message = f"{task_name}执行失败，返回码: {result.returncode}\n错误输出: {result.stderr[:500]}"
+                self.send_webhook_notification(f"{task_name}执行失败", error_message)
+            
+            # 任务完成后的处理
+            if maa_was_running and self.is_in_run_time():
+                self.logger.info(f"{task_name}完成，准备恢复MAA肉鸽任务")
+                time.sleep(5)
+            
+            return success
+            
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"{task_name}执行超时")
+            error_message = f"{task_name}执行超时（30分钟）"
+            self.send_webhook_notification(f"{task_name}执行超时", error_message)
+            
+            if maa_was_running and self.is_in_run_time():
+                self.logger.info(f"{task_name}超时，准备恢复MAA肉鸽任务")
+                time.sleep(5)
+            
+            return False
+        except Exception as e:
+            self.logger.error(f"执行{task_name}时发生错误: {e}")
+            error_message = f"{task_name}执行出现异常: {str(e)}"
+            self.send_webhook_notification(f"{task_name}执行异常", error_message)
+            
+            if maa_was_running and self.is_in_run_time():
+                self.logger.info(f"{task_name}异常，准备恢复MAA肉鸽任务")
+                time.sleep(5)
+            
+            return False
+    
+    def analyze_daily_task_output(self, output, task_name):
+        """分析每日任务输出"""
+        try:
+            # 检查任务完成情况
+            if self.task_complete_keyword in output:
+                self.logger.info(f"{task_name}检测到完成标志")
+                message = f"{task_name}成功完成\n执行时间: {datetime.now()}"
+                self.send_webhook_notification(f"✅ {task_name}完成", message)
+                return
+            
+            # 检查任务错误
+            if self.task_error_keyword in output:
+                self.logger.warning(f"{task_name}检测到错误标志")
+                message = f"{task_name}执行中出现错误\n执行时间: {datetime.now()}"
+                self.send_webhook_notification(f"⚠️ {task_name}错误", message)
+                return
+            
+            self.logger.info(f"{task_name}执行完成，未检测到特殊标志")
+            
+        except Exception as e:
+            self.logger.error(f"分析{task_name}输出时发生错误: {e}")
+    
+    def get_daily_tasks_status(self):
+        """获取每日任务状态"""
+        now = datetime.now()
+        current_date = now.date()
+        
+        start_day_done = self.last_start_day_date == current_date
+        end_day_done = self.last_end_day_date == current_date
+        
+        status = []
+        if not start_day_done:
+            if self.should_run_start_day_task():
+                status.append("清体力任务: 可执行")
+            else:
+                next_start = self.get_random_execution_time(self.start_day_time_start, self.start_day_time_end)
+                status.append(f"清体力任务: 等待执行窗口 ({int(self.start_day_time_start)}:{int((self.start_day_time_start % 1) * 60):02d}-{int(self.start_day_time_end)}:{int((self.start_day_time_end % 1) * 60):02d})")
+        else:
+            status.append("清体力任务: 今日已完成")
+            
+        if not end_day_done:
+            if self.should_run_end_day_task():
+                status.append("清材料任务: 可执行")
+            else:
+                status.append(f"清材料任务: 等待执行窗口 ({int(self.end_day_time_start)}:{int((self.end_day_time_start % 1) * 60):02d}-{int(self.end_day_time_end)}:{int((self.end_day_time_end % 1) * 60):02d})")
+        else:
+            status.append("清材料任务: 今日已完成")
+        
+        return status
             
     def main_loop(self):
         """主循环"""
@@ -617,6 +809,11 @@ class MAAAuto:
             self.logger.info("公招已到期，等待任务时间段内执行")
         else:
             self.logger.info(f"下次公招时间: {self.get_next_recruitment_time()}")
+        
+        # 显示每日任务状态
+        daily_status = self.get_daily_tasks_status()
+        for status in daily_status:
+            self.logger.info(status)
         
         while True:
             try:
@@ -635,7 +832,39 @@ class MAAAuto:
                     time.sleep(wait_increment)
                     continue
                 
-                # 在任务时间段内，首先检查公招
+                # 在任务时间段内，按优先级检查各种任务
+                
+                # 优先级1：检查每日清体力任务（3:00-3:30）
+                if self.should_run_start_day_task():
+                    self.logger.info("开始执行每日清体力任务")
+                    task_success = self.run_daily_task(self.start_day_command, "清体力任务")
+                    if task_success:
+                        self.last_start_day_date = datetime.now().date()
+                        self.logger.info("清体力任务执行成功")
+                    else:
+                        self.logger.warning("清体力任务执行失败")
+                    
+                    # 任务完成后检查是否仍在时间段内
+                    if not self.is_in_run_time():
+                        self.logger.info("清体力任务完成时已超出任务时间段，等待下次任务时间")
+                        continue
+                
+                # 优先级2：检查每日清材料任务（5:00-5:30）
+                if self.should_run_end_day_task():
+                    self.logger.info("开始执行每日清材料任务")
+                    task_success = self.run_daily_task(self.end_day_command, "清材料任务")
+                    if task_success:
+                        self.last_end_day_date = datetime.now().date()
+                        self.logger.info("清材料任务执行成功")
+                    else:
+                        self.logger.warning("清材料任务执行失败")
+                    
+                    # 任务完成后检查是否仍在时间段内
+                    if not self.is_in_run_time():
+                        self.logger.info("清材料任务完成时已超出任务时间段，等待下次任务时间")
+                        continue
+                
+                # 优先级3：检查公招任务
                 if self.should_run_recruitment():
                     self.logger.info("开始执行公招任务")
                     recruitment_success = self.run_recruitment_command()
@@ -703,13 +932,27 @@ class MAAAuto:
                         self.logger.info("已超出任务时间段，停止当前等待")
                         break
                     
-                    # 检查是否需要执行公招（这会中断当前MAA任务）
+                    # 检查是否需要执行每日任务或公招（这会中断当前MAA任务）
+                    if self.should_run_start_day_task():
+                        self.logger.info("在等待期间触发清体力任务，中断当前等待")
+                        task_success = self.run_daily_task(self.start_day_command, "清体力任务")
+                        if task_success:
+                            self.last_start_day_date = datetime.now().date()
+                        break
+                    
+                    if self.should_run_end_day_task():
+                        self.logger.info("在等待期间触发清材料任务，中断当前等待")
+                        task_success = self.run_daily_task(self.end_day_command, "清材料任务")
+                        if task_success:
+                            self.last_end_day_date = datetime.now().date()
+                        break
+                    
                     if self.should_run_recruitment():
                         self.logger.info("在等待期间触发公招任务，中断当前等待")
                         recruitment_success = self.run_recruitment_command()
                         if recruitment_success:
                             self.logger.info(f"公招任务执行成功，下次执行时间: {self.get_next_recruitment_time()}")
-                        # 公招完成后跳出等待循环，重新开始MAA任务
+                        # 任务完成后跳出等待循环，重新开始MAA任务
                         break
                 
             except KeyboardInterrupt:
