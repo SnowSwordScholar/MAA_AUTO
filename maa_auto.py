@@ -72,10 +72,23 @@ class MAAAuto:
         self.task_complete_keyword = self.config.get('DailyTasks', 'task_complete_keyword', fallback='任务完成')
         self.task_error_keyword = self.config.get('DailyTasks', 'task_error_keyword', fallback='任务失败')
         
+        # BAAH任务相关配置
+        self.baah_command = self.config.get('BAAH', 'command', fallback='cd /Task/BAAH ; /root/.local/bin/uv run python3 main.py task.json')
+        self.baah_time_start = float(self.config.get('BAAH', 'time_start', fallback=4.01))
+        self.baah_time_end = float(self.config.get('BAAH', 'time_end', fallback=4.5))
+        
+        # 分辨率配置
+        self.maa_resolution = self.config.get('MAA', 'screen_resolution', fallback='1920x1080')
+        self.baah_resolution = self.config.get('BAAH', 'screen_resolution', fallback='1280x720')
+        
+        # 当前设备分辨率状态（用于跟踪是否需要切换）
+        self.current_resolution = None
+        
         # 任务执行状态
         self.last_recruitment_time = None
         self.last_start_day_date = None  # 记录最后执行清体力任务的日期
         self.last_end_day_date = None    # 记录最后执行清材料任务的日期
+        self.last_baah_date = None       # 记录最后执行BAAH任务的日期
         
         # 从ADB命令中提取设备ID
         adb_device_match = re.search(r'adb -s ([^ ]+)', self.adb_command)
@@ -88,7 +101,8 @@ class MAAAuto:
         self.config['MAA'] = {
             'adb_command': 'adb -s localhost:35555 shell am start -n com.hypergryph.arknights/com.u8.sdk.U8UnityContext',
             'maa_command': 'maa roguelike Sami -v',
-            'maa_timeout': '3600'
+            'maa_timeout': '3600',
+            'screen_resolution': '1920x1080'
         }
         self.config['Schedule'] = {
             'run_time_start': '23',
@@ -115,8 +129,14 @@ class MAAAuto:
             'end_day_command': 'cd /Task/MAA/Python && /root/.local/bin/uv run python EndOneDay.py -v',
             'end_day_time_start': '5.0',
             'end_day_time_end': '5.5',
-            'task_complete_keyword': '任务完成',
+            'task_complete_keyword': 'AllTasksCompleted',
             'task_error_keyword': '任务失败'
+        }
+        self.config['BAAH'] = {
+            'command': 'cd /Task/BAAH ; /root/.local/bin/uv run python3 main.py task.json',
+            'time_start': '4.01',
+            'time_end': '4.5',
+            'screen_resolution': '1280x720'
         }
         
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
@@ -171,6 +191,37 @@ class MAAAuto:
             
         return 0
         
+    def set_screen_resolution(self, resolution):
+        """设置屏幕分辨率"""
+        try:
+            # 如果当前分辨率已经是目标分辨率，跳过
+            if self.current_resolution == resolution:
+                self.logger.info(f"屏幕分辨率已经是 {resolution}，跳过设置")
+                return True
+                
+            self.logger.info(f"设置屏幕分辨率为 {resolution}")
+            
+            # 先唤醒屏幕
+            self.wake_up_screen()
+            
+            # 设置分辨率
+            resolution_cmd = f"adb -s {self.adb_device} shell wm size {resolution}"
+            result = subprocess.run(resolution_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                self.logger.info(f"屏幕分辨率设置为 {resolution} 成功")
+                self.current_resolution = resolution
+                # 等待分辨率切换完成
+                time.sleep(3)
+                return True
+            else:
+                self.logger.error(f"设置屏幕分辨率失败: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"设置屏幕分辨率时发生错误: {e}")
+            return False
+    
     def wake_up_screen(self):
         """唤醒屏幕"""
         try:
@@ -503,8 +554,12 @@ class MAAAuto:
             time.sleep(3)
         
         try:
-            # 在执行公招前先启动明日方舟
-            self.logger.info("公招任务启动前，先启动明日方舟")
+            # 设置MAA所需的分辨率并启动明日方舟
+            self.logger.info("公招任务启动前，设置分辨率并启动明日方舟")
+            resolution_success = self.set_screen_resolution(self.maa_resolution)
+            if not resolution_success:
+                self.logger.warning("设置MAA分辨率失败，但继续执行任务")
+            
             adb_success = self.run_adb_command()
             if not adb_success:
                 self.logger.warning("启动明日方舟失败，但继续执行公招任务")
@@ -656,6 +711,23 @@ class MAAAuto:
         current_hour = now.hour + now.minute / 60.0
         return self.end_day_time_start <= current_hour <= self.end_day_time_end
     
+    def should_run_baah_task(self):
+        """检查是否应该执行BAAH任务（每天4:01-4:30，MAA停止期间）"""
+        now = datetime.now()
+        current_date = now.date()
+        
+        # 检查今天是否已经执行过
+        if self.last_baah_date == current_date:
+            return False
+        
+        # 检查是否在MAA停止时间段内（即不在MAA运行时间段内）
+        if self.is_in_run_time():
+            return False
+            
+        # 检查是否在BAAH执行时间窗口内
+        current_hour = now.hour + now.minute / 60.0
+        return self.baah_time_start <= current_hour <= self.baah_time_end
+    
     def get_random_execution_time(self, start_hour, end_hour):
         """在指定时间范围内生成随机执行时间"""
         import random
@@ -677,6 +749,38 @@ class MAAAuto:
         
         return random_time
     
+    def run_baah_task(self):
+        """执行BAAH任务（在MAA停止期间执行，需要切换分辨率）"""
+        try:
+            self.logger.info(f"开始执行BAAH任务: {self.baah_command}")
+            
+            # 设置BAAH所需的分辨率
+            resolution_success = self.set_screen_resolution(self.baah_resolution)
+            if not resolution_success:
+                self.logger.warning("设置BAAH分辨率失败，但继续执行任务")
+            
+            # BAAH有自己的通知和日志系统，只需要执行并等待结束
+            result = subprocess.run(
+                self.baah_command,
+                shell=True,
+                capture_output=False,  # 不捕获输出，让BAAH自己处理日志
+                timeout=3600  # 1小时超时
+            )
+            
+            if result.returncode == 0:
+                self.logger.info("BAAH任务执行成功")
+                return True
+            else:
+                self.logger.error(f"BAAH任务执行失败，返回码: {result.returncode}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error("BAAH任务执行超时")
+            return False
+        except Exception as e:
+            self.logger.error(f"执行BAAH任务时发生错误: {e}")
+            return False
+    
     def run_daily_task(self, command, task_name):
         """执行每日任务的通用方法"""
         # 如果MAA正在运行，先停止它
@@ -687,8 +791,12 @@ class MAAAuto:
             time.sleep(3)
         
         try:
-            # 启动明日方舟
-            self.logger.info(f"{task_name}启动前，先启动明日方舟")
+            # 设置MAA分辨率并启动明日方舟
+            self.logger.info(f"{task_name}启动前，设置分辨率并启动明日方舟")
+            resolution_success = self.set_screen_resolution(self.maa_resolution)
+            if not resolution_success:
+                self.logger.warning("设置MAA分辨率失败，但继续执行任务")
+                
             adb_success = self.run_adb_command()
             if not adb_success:
                 self.logger.warning("启动明日方舟失败，但继续执行任务")
@@ -776,13 +884,13 @@ class MAAAuto:
         
         start_day_done = self.last_start_day_date == current_date
         end_day_done = self.last_end_day_date == current_date
+        baah_done = self.last_baah_date == current_date
         
         status = []
         if not start_day_done:
             if self.should_run_start_day_task():
                 status.append("清体力任务: 可执行")
             else:
-                next_start = self.get_random_execution_time(self.start_day_time_start, self.start_day_time_end)
                 status.append(f"清体力任务: 等待执行窗口 ({int(self.start_day_time_start)}:{int((self.start_day_time_start % 1) * 60):02d}-{int(self.start_day_time_end)}:{int((self.start_day_time_end % 1) * 60):02d})")
         else:
             status.append("清体力任务: 今日已完成")
@@ -794,6 +902,14 @@ class MAAAuto:
                 status.append(f"清材料任务: 等待执行窗口 ({int(self.end_day_time_start)}:{int((self.end_day_time_start % 1) * 60):02d}-{int(self.end_day_time_end)}:{int((self.end_day_time_end % 1) * 60):02d})")
         else:
             status.append("清材料任务: 今日已完成")
+        
+        if not baah_done:
+            if self.should_run_baah_task():
+                status.append("BAAH任务: 可执行")
+            else:
+                status.append(f"BAAH任务: 等待执行窗口 ({int(self.baah_time_start)}:{int((self.baah_time_start % 1) * 60):02d}-{int(self.baah_time_end)}:{int((self.baah_time_end % 1) * 60):02d})")
+        else:
+            status.append("BAAH任务: 今日已完成")
         
         return status
             
@@ -818,11 +934,21 @@ class MAAAuto:
             try:
                 # 检查任务时间段
                 if not self.is_in_run_time():
+                    # 在MAA停止期间，检查是否需要执行BAAH任务
+                    if self.should_run_baah_task():
+                        self.logger.info("MAA停止期间，开始执行BAAH任务")
+                        baah_success = self.run_baah_task()
+                        if baah_success:
+                            self.last_baah_date = datetime.now().date()
+                            self.logger.info("BAAH任务执行成功")
+                        else:
+                            self.logger.warning("BAAH任务执行失败")
+                    
                     delay = self.calculate_delay()
-                    # 在暂停期间，每小时检查一次（但不执行任何任务）
+                    # 在暂停期间，每小时检查一次
                     wait_increment = min(3600, delay)
                     
-                    # 显示公招状态（如果公招已到期）
+                    # 显示状态信息
                     if self.is_recruitment_due():
                         self.logger.info(f"公招已到期，等待任务时间段开始。还需等待{wait_increment}秒")
                     else:
@@ -878,6 +1004,12 @@ class MAAAuto:
                         continue
                 
                 # 执行MAA任务流程
+                # 设置MAA分辨率并启动游戏
+                self.logger.info("准备启动MAA任务，设置分辨率")
+                resolution_success = self.set_screen_resolution(self.maa_resolution)
+                if not resolution_success:
+                    self.logger.warning("设置MAA分辨率失败，但继续执行")
+                
                 # 执行ADB命令启动游戏
                 adb_success = self.run_adb_command()
                 if not adb_success:
