@@ -12,6 +12,7 @@ import threading
 from datetime import datetime, timedelta
 import requests
 import signal
+import re
 
 class MAAAuto:
     def __init__(self, config_file="/Task/MAA_Auto/config.ini"):
@@ -53,8 +54,16 @@ class MAAAuto:
         self.error_window = int(self.config.get('Error', 'error_window', fallback=600))
         self.webhook_url = self.config.get('Notification', 'webhook_url', fallback='')
         
+        # 公招相关配置
+        self.recruitment_command = self.config.get('Recruitment', 'command', fallback='cd /Task/MAA/Python && uv run python qwq.py -v')
+        self.recruitment_interval_hours = float(self.config.get('Recruitment', 'interval_hours', fallback=9.5))
+        self.senior_operator_keyword = self.config.get('Recruitment', 'senior_operator_keyword', fallback='资深干员')
+        self.top_operator_keyword = self.config.get('Recruitment', 'top_operator_keyword', fallback='高级资深干员')
+        
+        # 公招相关状态
+        self.last_recruitment_time = None
+        
         # 从ADB命令中提取设备ID
-        import re
         adb_device_match = re.search(r'adb -s ([^ ]+)', self.adb_command)
         if adb_device_match:
             self.adb_device = adb_device_match.group(1)
@@ -78,6 +87,12 @@ class MAAAuto:
         }
         self.config['Notification'] = {
             'webhook_url': 'https://<uid>.push.ft07.com/send/<sendkey>.send?title={title}&desp={desp}&tags=MAA'
+        }
+        self.config['Recruitment'] = {
+            'command': 'cd /Task/MAA/Python && uv run python qwq.py -v',
+            'interval_hours': '9.5',
+            'senior_operator_keyword': '资深干员',
+            'top_operator_keyword': '高级资深干员'
         }
         
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
@@ -132,6 +147,33 @@ class MAAAuto:
             
         return 0
         
+    def wake_up_screen(self):
+        """唤醒屏幕"""
+        try:
+            self.logger.info("尝试唤醒屏幕")
+            
+            # 发送唤醒按键
+            wake_cmd = f"adb -s {self.adb_device} shell input keyevent KEYCODE_WAKEUP"
+            result = subprocess.run(wake_cmd, shell=True, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                self.logger.info("屏幕唤醒命令发送成功")
+                # 等待屏幕唤醒
+                time.sleep(2)
+                
+                # 发送菜单键解锁（如果需要）
+                menu_cmd = f"adb -s {self.adb_device} shell input keyevent KEYCODE_MENU"
+                subprocess.run(menu_cmd, shell=True, capture_output=True, timeout=10)
+                
+                return True
+            else:
+                self.logger.warning(f"屏幕唤醒命令失败: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"唤醒屏幕时发生错误: {e}")
+            return False
+    
     def run_adb_command(self):
         """执行ADB启动命令"""
         try:
@@ -400,18 +442,214 @@ class MAAAuto:
             self.error_count = 0
             self.last_error_time = None
             
+    def should_run_recruitment(self):
+        """检查是否应该执行公招（需要在任务时间段内且间隔足够）"""
+        # 首先检查是否在任务时间段内
+        if not self.is_in_run_time():
+            return False
+            
+        if self.last_recruitment_time is None:
+            return True
+            
+        now = datetime.now()
+        time_since_last = now - self.last_recruitment_time
+        interval_seconds = self.recruitment_interval_hours * 3600
+        
+        return time_since_last.total_seconds() >= interval_seconds
+    
+    def is_recruitment_due(self):
+        """检查公招是否到期（不考虑时间段限制，用于显示状态）"""
+        if self.last_recruitment_time is None:
+            return True
+            
+        now = datetime.now()
+        time_since_last = now - self.last_recruitment_time
+        interval_seconds = self.recruitment_interval_hours * 3600
+        
+        return time_since_last.total_seconds() >= interval_seconds
+    
+    def run_recruitment_command(self):
+        """执行公招命令（需要暂停MAA任务）"""
+        # 如果MAA正在运行，先停止它
+        maa_was_running = self.is_running
+        if maa_was_running:
+            self.logger.info("公招开始，暂停MAA肉鸽任务")
+            self.stop_maa_command()
+            # 等待MAA进程完全停止
+            time.sleep(3)
+        
+        try:
+            # 在执行公招前先启动明日方舟
+            self.logger.info("公招任务启动前，先启动明日方舟")
+            adb_success = self.run_adb_command()
+            if not adb_success:
+                self.logger.warning("启动明日方舟失败，但继续执行公招任务")
+            else:
+                # 等待游戏启动
+                self.logger.info("等待明日方舟启动完成...")
+                time.sleep(10)
+            
+            self.logger.info(f"开始执行公招命令: {self.recruitment_command}")
+            
+            # 执行公招命令，捕获所有输出到内存中
+            result = subprocess.run(
+                self.recruitment_command, 
+                shell=True, 
+                capture_output=True, 
+                text=True,
+                timeout=1800  # 30分钟超时
+            )
+            
+            # 记录公招执行时间
+            self.last_recruitment_time = datetime.now()
+            
+            # 分析输出日志
+            output_lines = result.stdout + result.stderr
+            self.analyze_recruitment_output(output_lines)
+            
+            success = False
+            if result.returncode == 0:
+                self.logger.info("公招命令执行成功")
+                success = True
+            else:
+                self.logger.error(f"公招命令执行失败，返回码: {result.returncode}")
+                # 发送公招失败通知
+                error_message = f"公招脚本执行失败，返回码: {result.returncode}\n错误输出: {result.stderr[:500]}"
+                self.send_webhook_notification("公招脚本执行失败", error_message)
+            
+            # 公招结束后，如果之前MAA在运行且仍在任务时间段内，准备重启MAA
+            if maa_was_running and self.is_in_run_time():
+                self.logger.info("公招完成，准备恢复MAA肉鸽任务")
+                # 给一点时间让系统稳定
+                time.sleep(5)
+            
+            return success
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error("公招命令执行超时")
+            error_message = "公招脚本执行超时（30分钟），可能脚本更新导致问题"
+            self.send_webhook_notification("公招脚本执行超时", error_message)
+            
+            # 超时后也要考虑恢复MAA
+            if maa_was_running and self.is_in_run_time():
+                self.logger.info("公招超时，准备恢复MAA肉鸽任务")
+                time.sleep(5)
+            
+            return False
+        except Exception as e:
+            self.logger.error(f"执行公招命令时发生错误: {e}")
+            error_message = f"公招脚本执行出现异常: {str(e)}"
+            self.send_webhook_notification("公招脚本执行异常", error_message)
+            
+            # 异常后也要考虑恢复MAA
+            if maa_was_running and self.is_in_run_time():
+                self.logger.info("公招异常，准备恢复MAA肉鸽任务")
+                time.sleep(5)
+            
+            return False
+    
+    def analyze_recruitment_output(self, output):
+        """分析公招输出日志，查找高级干员"""
+        try:
+            # 检查是否包含高级资深干员（六星）
+            if self.top_operator_keyword in output:
+                self.logger.info(f"检测到{self.top_operator_keyword}！")
+                message = f"恭喜！检测到{self.top_operator_keyword}（六星）\n执行时间: {datetime.now()}"
+                self.send_webhook_notification(f"🌟 {self.top_operator_keyword}出现！", message)
+                return
+            
+            # 检查是否包含资深干员（五星）
+            if self.senior_operator_keyword in output:
+                self.logger.info(f"检测到{self.senior_operator_keyword}！")
+                message = f"检测到{self.senior_operator_keyword}（五星）\n执行时间: {datetime.now()}"
+                self.send_webhook_notification(f"⭐ {self.senior_operator_keyword}出现！", message)
+                return
+            
+            self.logger.info("本次公招未检测到高级干员")
+            
+        except Exception as e:
+            self.logger.error(f"分析公招输出时发生错误: {e}")
+    
+    def get_next_recruitment_time(self):
+        """获取下次公招时间"""
+        if self.last_recruitment_time is None:
+            if self.is_in_run_time():
+                return "立即执行"
+            else:
+                return "等待任务时间段"
+                
+        next_due_time = self.last_recruitment_time + timedelta(hours=self.recruitment_interval_hours)
+        
+        # 如果下次到期时间在任务时间段内，直接返回
+        if self.is_time_in_run_period(next_due_time):
+            return next_due_time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 如果下次到期时间不在任务时间段内，计算下一个任务时间段开始时间
+        actual_next_time = self.calculate_next_run_time_after(next_due_time)
+        return f"{next_due_time.strftime('%Y-%m-%d %H:%M:%S')} (实际执行: {actual_next_time.strftime('%Y-%m-%d %H:%M:%S')})"
+    
+    def is_time_in_run_period(self, target_time):
+        """检查指定时间是否在运行时间段内"""
+        hour = target_time.hour
+        if self.run_time_end > self.run_time_start:
+            return self.run_time_start <= hour < self.run_time_end
+        else:
+            return hour >= self.run_time_start or hour < self.run_time_end
+    
+    def calculate_next_run_time_after(self, after_time):
+        """计算指定时间之后的下一个运行时间段开始时间"""
+        if after_time.hour < self.run_time_start:
+            # 同一天的开始时间
+            return after_time.replace(hour=self.run_time_start, minute=0, second=0, microsecond=0)
+        else:
+            # 下一天的开始时间
+            next_day = after_time + timedelta(days=1)
+            return next_day.replace(hour=self.run_time_start, minute=0, second=0, microsecond=0)
+            
     def main_loop(self):
         """主循环"""
         self.logger.info("MAA自动任务启动")
+        self.logger.info(f"任务时间段: {self.run_time_start}点 - {self.run_time_end}点")
+        self.logger.info(f"公招任务间隔: {self.recruitment_interval_hours}小时")
+        
+        # 显示公招状态
+        if self.is_recruitment_due():
+            self.logger.info("公招已到期，等待任务时间段内执行")
+        else:
+            self.logger.info(f"下次公招时间: {self.get_next_recruitment_time()}")
         
         while True:
             try:
-                # 检查是否需要延迟
-                delay = self.calculate_delay()
-                if delay > 0:
-                    time.sleep(delay)
+                # 检查任务时间段
+                if not self.is_in_run_time():
+                    delay = self.calculate_delay()
+                    # 在暂停期间，每小时检查一次（但不执行任何任务）
+                    wait_increment = min(3600, delay)
+                    
+                    # 显示公招状态（如果公招已到期）
+                    if self.is_recruitment_due():
+                        self.logger.info(f"公招已到期，等待任务时间段开始。还需等待{wait_increment}秒")
+                    else:
+                        self.logger.info(f"不在任务时间段，等待{wait_increment}秒后再次检查")
+                    
+                    time.sleep(wait_increment)
                     continue
                 
+                # 在任务时间段内，首先检查公招
+                if self.should_run_recruitment():
+                    self.logger.info("开始执行公招任务")
+                    recruitment_success = self.run_recruitment_command()
+                    if recruitment_success:
+                        self.logger.info(f"公招任务执行成功，下次执行时间: {self.get_next_recruitment_time()}")
+                    else:
+                        self.logger.warning("公招任务执行失败")
+                    
+                    # 公招完成后，如果仍在任务时间段内，继续MAA任务
+                    if not self.is_in_run_time():
+                        self.logger.info("公招完成时已超出任务时间段，等待下次任务时间")
+                        continue
+                
+                # 执行MAA任务流程
                 # 执行ADB命令启动游戏
                 adb_success = self.run_adb_command()
                 if not adb_success:
@@ -428,12 +666,12 @@ class MAAAuto:
                         
                     self.update_error_count(False)
                     self.logger.info("等待10秒后重试...")
-                    time.sleep(10)  # 等待10秒后重试
+                    time.sleep(10)
                     continue
                 
                 # 等待游戏启动
                 self.logger.info("等待游戏启动...")
-                time.sleep(10)  # 等待10秒让游戏完全启动
+                time.sleep(10)
                 
                 # 执行MAA命令
                 maa_success = self.run_maa_command()
@@ -446,10 +684,33 @@ class MAAAuto:
                     wait_time = self.restart_delay
                     self.logger.info(f"MAA执行成功，等待 {wait_time} 秒后重试")
                 else:
-                    wait_time = min(self.restart_delay * 2, 300)  # 失败时等待时间加倍，最多5分钟
+                    wait_time = min(self.restart_delay * 2, 300)
                     self.logger.warning(f"MAA执行失败，等待 {wait_time} 秒后重试")
                 
-                time.sleep(wait_time)
+                # 在等待期间检查公招和时间段
+                start_wait = time.time()
+                while time.time() - start_wait < wait_time:
+                    remaining_wait = wait_time - (time.time() - start_wait)
+                    sleep_time = min(30, remaining_wait)
+                    
+                    if sleep_time <= 0:
+                        break
+                        
+                    time.sleep(sleep_time)
+                    
+                    # 检查是否还在任务时间段内
+                    if not self.is_in_run_time():
+                        self.logger.info("已超出任务时间段，停止当前等待")
+                        break
+                    
+                    # 检查是否需要执行公招（这会中断当前MAA任务）
+                    if self.should_run_recruitment():
+                        self.logger.info("在等待期间触发公招任务，中断当前等待")
+                        recruitment_success = self.run_recruitment_command()
+                        if recruitment_success:
+                            self.logger.info(f"公招任务执行成功，下次执行时间: {self.get_next_recruitment_time()}")
+                        # 公招完成后跳出等待循环，重新开始MAA任务
+                        break
                 
             except KeyboardInterrupt:
                 self.logger.info("用户中断程序")
@@ -458,7 +719,7 @@ class MAAAuto:
             except Exception as e:
                 self.logger.error(f"主循环发生未知错误: {e}")
                 self.stop_maa_command()
-                time.sleep(60)  # 发生未知错误时等待1分钟
+                time.sleep(60)
 
 if __name__ == "__main__":
     # 设置信号处理
