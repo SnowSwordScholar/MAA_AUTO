@@ -754,8 +754,7 @@ class MAAAuto:
             # 检查任务完成情况
             if self.task_complete_keyword in output:
                 self.logger.info(f"{task_name}检测到完成标志")
-                message = f"{task_name}成功完成\n执行时间: {datetime.now()}"
-                self.send_webhook_notification(f"✅ {task_name}完成", message)
+                # 每日任务成功完成时不发送通知，只记录日志
                 return
             
             # 检查任务错误
