@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-file-text"></i> 系统日志
+                </h5>
+                <div>
+                    <div class="btn-group" role="group">
+                        <button id="refreshBtn" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                        <button id="clearBtn" class="btn btn-outline-danger">
+                            <i class="bi bi-trash"></i> 清空显示
+                        </button>
+                        <button id="downloadBtn" class="btn btn-outline-primary">
+                            <i class="bi bi-download"></i> 下载日志
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- 日志控制面板 -->
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="logLines" class="form-label">显示行数</label>
+                        <select class="form-select" id="logLines">
+                            <option value="50">50行</option>
+                            <option value="100" selected>100行</option>
+                            <option value="200">200行</option>
+                            <option value="500">500行</option>
+                            <option value="1000">1000行</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="logFilter" class="form-label">日志过滤</label>
+                        <select class="form-select" id="logFilter">
+                            <option value="">全部</option>
+                            <option value="ERROR">错误</option>
+                            <option value="WARNING">警告</option>
+                            <option value="INFO">信息</option>
+                            <option value="公招">公招相关</option>
+                            <option value="每日任务">每日任务</option>
+                            <option value="BAAH">BAAH任务</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="autoRefresh" class="form-label">自动刷新</label>
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
+                            <label class="form-check-label" for="autoRefresh">
+                                每30秒刷新
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 日志搜索 -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="input-group">
+                            <span class="input-group-text">
+                                <i class="bi bi-search"></i>
+                            </span>
+                            <input type="text" class="form-control" id="searchInput" placeholder="搜索日志内容...">
+                            <button class="btn btn-outline-secondary" id="searchBtn">搜索</button>
+                            <button class="btn btn-outline-secondary" id="clearSearchBtn">清除</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 日志显示区域 -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>
+                                <i class="bi bi-terminal"></i> 日志内容
+                                <span id="logInfo" class="text-muted ms-2"></span>
+                            </span>
+                            <div>
+                                <button id="scrollTopBtn" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-arrow-up"></i> 顶部
+                                </button>
+                                <button id="scrollBottomBtn" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-arrow-down"></i> 底部
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="logContainer" class="bg-dark text-light p-3" style="height: 600px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.875rem;">
+                            <div class="text-center">
+                                <div class="spinner-border text-light" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                                <div class="mt-2">加载日志中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 日志统计 -->
+                <div class="row mt-3">
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h5 id="infoCount">0</h5>
+                                <small>信息日志</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h5 id="warningCount">0</h5>
+                                <small>警告日志</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body text-center">
+                                <h5 id="errorCount">0</h5>
+                                <small>错误日志</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h5 id="totalLines">0</h5>
+                                <small>总行数</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let autoRefreshInterval;
+    let allLogs = '';
+    let filteredLogs = '';
+
+    // 加载日志
+    async function loadLogs() {
+        const lines = document.getElementById('logLines').value;
+        
+        try {
+            const response = await axios.get(`/api/logs?lines=${lines}`);
+            allLogs = response.data.logs;
+            applyFilter();
+            updateLogStats();
+        } catch (error) {
+            document.getElementById('logContainer').innerHTML = '<div class="text-danger">加载日志失败: ' + error.message + '</div>';
+        }
+    }
+
+    // 应用过滤器
+    function applyFilter() {
+        const filter = document.getElementById('logFilter').value;
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        
+        let logs = allLogs;
+        
+        // 应用级别过滤
+        if (filter) {
+            const lines = logs.split('\n');
+            logs = lines.filter(line => line.includes(filter)).join('\n');
+        }
+        
+        // 应用搜索过滤
+        if (searchTerm) {
+            const lines = logs.split('\n');
+            logs = lines.filter(line => line.toLowerCase().includes(searchTerm)).join('\n');
+        }
+        
+        filteredLogs = logs;
+        displayLogs(logs);
+        
+        // 更新信息显示
+        const totalLines = logs.split('\n').filter(line => line.trim()).length;
+        document.getElementById('logInfo').textContent = `显示 ${totalLines} 行`;
+    }
+
+    // 显示日志
+    function displayLogs(logs) {
+        const container = document.getElementById('logContainer');
+        
+        if (!logs || logs.trim() === '') {
+            container.innerHTML = '<div class="text-muted">没有找到匹配的日志</div>';
+            return;
+        }
+        
+        // 高亮不同级别的日志
+        const highlightedLogs = logs
+            .replace(/ERROR/g, '<span class="text-danger fw-bold">ERROR</span>')
+            .replace(/WARNING/g, '<span class="text-warning fw-bold">WARNING</span>')
+            .replace(/INFO/g, '<span class="text-info fw-bold">INFO</span>')
+            .replace(/(资深干员|高级资深干员)/g, '<span class="text-success fw-bold">$1</span>')
+            .replace(/(任务完成|执行成功)/g, '<span class="text-success">$1</span>')
+            .replace(/(任务失败|执行失败|错误)/g, '<span class="text-danger">$1</span>');
+        
+        container.innerHTML = `<pre class="mb-0">${highlightedLogs}</pre>`;
+        
+        // 自动滚动到底部（如果用户没有手动滚动）
+        if (container.scrollTop >= container.scrollHeight - container.clientHeight - 100) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    // 更新日志统计
+    function updateLogStats() {
+        const lines = allLogs.split('\n').filter(line => line.trim());
+        
+        const infoCount = lines.filter(line => line.includes('INFO')).length;
+        const warningCount = lines.filter(line => line.includes('WARNING')).length;
+        const errorCount = lines.filter(line => line.includes('ERROR')).length;
+        
+        document.getElementById('infoCount').textContent = infoCount;
+        document.getElementById('warningCount').textContent = warningCount;
+        document.getElementById('errorCount').textContent = errorCount;
+        document.getElementById('totalLines').textContent = lines.length;
+    }
+
+    // 搜索日志
+    function searchLogs() {
+        applyFilter();
+    }
+
+    // 清除搜索
+    function clearSearch() {
+        document.getElementById('searchInput').value = '';
+        applyFilter();
+    }
+
+    // 清空显示
+    function clearDisplay() {
+        document.getElementById('logContainer').innerHTML = '<div class="text-muted">日志显示已清空</div>';
+    }
+
+    // 下载日志
+    function downloadLogs() {
+        const element = document.createElement('a');
+        const file = new Blob([allLogs], {type: 'text/plain'});
+        element.href = URL.createObjectURL(file);
+        element.download = `maa_auto_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+    }
+
+    // 滚动控制
+    function scrollToTop() {
+        document.getElementById('logContainer').scrollTop = 0;
+    }
+
+    function scrollToBottom() {
+        const container = document.getElementById('logContainer');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    // 设置自动刷新
+    function setupAutoRefresh() {
+        const checkbox = document.getElementById('autoRefresh');
+        
+        if (checkbox.checked) {
+            autoRefreshInterval = setInterval(loadLogs, 30000);
+        } else {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+    }
+
+    // 事件监听器
+    document.addEventListener('DOMContentLoaded', function() {
+        // 按钮事件
+        document.getElementById('refreshBtn').addEventListener('click', loadLogs);
+        document.getElementById('clearBtn').addEventListener('click', clearDisplay);
+        document.getElementById('downloadBtn').addEventListener('click', downloadLogs);
+        document.getElementById('searchBtn').addEventListener('click', searchLogs);
+        document.getElementById('clearSearchBtn').addEventListener('click', clearSearch);
+        document.getElementById('scrollTopBtn').addEventListener('click', scrollToTop);
+        document.getElementById('scrollBottomBtn').addEventListener('click', scrollToBottom);
+        
+        // 控制面板事件
+        document.getElementById('logLines').addEventListener('change', loadLogs);
+        document.getElementById('logFilter').addEventListener('change', applyFilter);
+        document.getElementById('autoRefresh').addEventListener('change', setupAutoRefresh);
+        
+        // 搜索框回车事件
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchLogs();
+            }
+        });
+        
+        // 初始化
+        loadLogs();
+        setupAutoRefresh();
+    });
+
+    // 页面离开时清理定时器
+    window.addEventListener('beforeunload', function() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+    });
+</script>
+{% endblock %}
