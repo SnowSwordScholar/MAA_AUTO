@@ -1,1 +1,3 @@
-logs/maa_auto.log
+logs
+__pycache__
+
