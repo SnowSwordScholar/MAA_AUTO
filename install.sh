@@ -109,6 +109,19 @@ setup_logs() {
     log_success "日志目录创建完成"
 }
 
+# 设置脚本权限
+setup_permissions() {
+    log_info "设置脚本权限..."
+    
+    cd /Task/MAA_Auto
+    chmod +x start_services.sh
+    chmod +x stop_services.sh
+    chmod +x manage.sh
+    chmod +x install.sh
+    
+    log_success "脚本权限设置完成"
+}
+
 # 主函数
 main() {
     log_info "开始安装MAA任务调度器..."
@@ -118,21 +131,31 @@ main() {
     install_dependencies
     setup_env
     setup_logs
+    setup_permissions
     install_service
     
     log_success "MAA任务调度器安装完成！"
     echo
-    log_info "使用以下命令管理服务:"
+    log_info "使用以下命令管理服务 (推荐):"
+    echo "  启动服务 (调度器+Web): ./manage.sh start"
+    echo "  停止服务: ./manage.sh stop"
+    echo "  查看状态: ./manage.sh status"
+    echo "  查看日志: ./manage.sh logs"
+    echo "  启用开机自启: ./manage.sh enable"
+    echo
+    log_info "或使用systemctl命令:"
     echo "  启动服务: systemctl start maa-scheduler"
     echo "  停止服务: systemctl stop maa-scheduler"
     echo "  查看状态: systemctl status maa-scheduler"
     echo "  查看日志: journalctl -u maa-scheduler -f"
     echo
+    log_info "Web管理界面:"
+    echo "  本地访问: http://localhost:5000"
+    echo "  局域网访问: http://$(hostname -I | awk '{print $1}'):5000"
+    echo
     log_info "使用以下命令管理任务:"
-    echo "  查看任务状态: python3 /Task/MAA_Auto/main.py status"
-    echo "  列出所有任务: python3 /Task/MAA_Auto/main.py list"
-    echo "  添加任务: python3 /Task/MAA_Auto/main.py add <name> <schedule> <steps...>"
-    echo "  删除任务: python3 /Task/MAA_Auto/main.py del <name>"
+    echo "  查看任务状态: ./manage.sh list"
+    echo "  测试配置: uv run python main.py test"
     echo
     log_warning "请在启动服务前确保:"
     echo "  1. 编辑 /Task/MAA_Auto/.env 文件，填入正确的配置"

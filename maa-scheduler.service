@@ -1,5 +1,5 @@
 [Unit]
-Description=MAA任务调度器服务
+Description=MAA任务调度器服务 (调度器 + Web界面)
 After=network.target
 Wants=network.target
 
@@ -8,7 +8,8 @@ Type=simple
 User=root
 WorkingDirectory=/Task/MAA_Auto
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/python3 main.py run --config task_config.ini
+ExecStart=/Task/MAA_Auto/start_services.sh
+ExecStop=/Task/MAA_Auto/stop_services.sh
 Restart=always
 RestartSec=10
 StandardOutput=journal
