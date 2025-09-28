@@ -79,6 +79,9 @@ test_*
 # Migrated/temporary files
 migrate_config.py
 maa_auto.py
+start_services.sh
+stop_services.sh
+*.pid
 
 # OS
 .DS_Store
