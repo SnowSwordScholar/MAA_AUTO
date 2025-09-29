@@ -527,12 +527,61 @@ localhost</textarea>
     // 保存所有设置
     async function saveAllSettings() {
         try {
-            // 这里实现保存逻辑
-            // 由于当前API不支持配置保存，这里只是演示
-            showToast('设置保存功能开发中', 'info');
+            // 收集所有表单数据
+            const configData = {};
+            
+            // 基础设置
+            const generalForm = document.getElementById('general-settings-form');
+            if (generalForm) {
+                const formData = new FormData(generalForm);
+                for (const [key, value] of formData.entries()) {
+                    configData[key] = value;
+                }
+            }
+            
+            // 调度器设置
+            const schedulerForm = document.getElementById('scheduler-settings-form');
+            if (schedulerForm) {
+                const formData = new FormData(schedulerForm);
+                for (const [key, value] of formData.entries()) {
+                    if (key === 'scheduler_enabled' || key === 'debug') {
+                        configData[key] = true; // checkbox只在选中时发送
+                    } else if (key === 'max_workers' || key === 'task_timeout' || key === 'queue_check_interval' || key === 'web_port') {
+                        configData[key] = parseInt(value);
+                    } else {
+                        configData[key] = value;
+                    }
+                }
+                
+                // 处理未选中的checkbox
+                if (!formData.has('scheduler_enabled')) configData['scheduler_enabled'] = false;
+                if (!formData.has('debug')) configData['debug'] = false;
+            }
+            
+            // 日志设置
+            const logForm = document.getElementById('log-settings-form');
+            if (logForm) {
+                const formData = new FormData(logForm);
+                for (const [key, value] of formData.entries()) {
+                    if (key === 'log_backup_count') {
+                        configData[key] = parseInt(value);
+                    } else {
+                        configData[key] = value;
+                    }
+                }
+            }
+            
+            // 发送保存请求
+            const response = await apiRequest('/api/config', {
+                method: 'POST',
+                body: JSON.stringify(configData)
+            });
+            
+            showToast('设置保存成功！' + (response.restart_required ? '（部分设置需重启生效）' : ''), 'success');
+            
         } catch (error) {
             console.error('保存设置失败:', error);
-            showToast('保存设置失败', 'danger');
+            showToast('保存设置失败: ' + (error.message || '未知错误'), 'danger');
         }
     }
 

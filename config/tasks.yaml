@@ -1,161 +1,66 @@
-- description: 这是一个用于测试的简单任务
-  emulator_device_id: null
-  enable_global_log: true
-  enable_temp_log: true
+# 测试任务配置 - 使用新的配置模型
+
+- id: "test-console-task"
+  name: "控制台测试任务"
+  description: "简单的控制台命令测试"
   enabled: true
-  environment_variables: {}
-  failure_message: 测试任务执行失败
-  id: test-task-001
-  is_emulator_task: false
-  keyword_message: ''
-  keyword_notification: false
-  log_keywords:
-  - error
-  - failed
-  main_command: echo '测试任务执行成功' && date
-  name: 测试任务
-  notify_on_failure: true
-  notify_on_success: true
-  pre_commands: []
   priority: 5
-  resource_group: general
-  startup_app: null
-  success_message: 测试任务执行成功
-  target_resolution: null
-  temp_log_path: null
+  resource_group: "general"
+  task_type: "console"
   trigger:
-    cron_expression: null
-    interval_seconds: 300
-    random_distribution: uniform
-    random_end_time: null
-    random_start_time: null
-    trigger_type: interval
-  working_directory: null
-- description: 模拟 MAA 自动化任务的示例
-  emulator_device_id: 127.0.0.1:5555
-  enable_global_log: true
-  enable_temp_log: true
+    trigger_type: "interval"
+    interval_minutes: 5
+  execution:
+    command: "echo '控制台任务执行成功' && date"
+  post_task:
+    log_config:
+      enable_global_log: true
+      enable_temp_log: true
+    notifications:
+      notify_on_success: true
+      notify_on_failure: true
+      success_notification:
+        title: "任务成功"
+        tag: "success"
+        content: "控制台任务 {task_name} 执行成功"
+      failure_notification:
+        title: "任务失败"  
+        tag: "error"
+        content: "控制台任务 {task_name} 执行失败"
+    keyword_monitoring:
+      enabled: false
+
+- id: "test-maa-task"
+  name: "MAA测试任务"
+  description: "MAA任务示例，带ADB唤醒功能"
   enabled: false
-  environment_variables: {}
-  failure_message: MAA 任务执行失败，请检查设备状态
-  id: demo-maa-task
-  is_emulator_task: true
-  keyword_message: MAA 任务发现异常关键词
-  keyword_notification: true
-  log_keywords:
-  - error
-  - failed
-  - timeout
-  main_command: echo '模拟 MAA 任务执行' && sleep 10 && echo '任务执行完成'
-  name: 演示 MAA 任务
-  notify_on_failure: true
-  notify_on_success: false
-  pre_commands:
-  - echo '准备启动模拟器任务'
   priority: 3
-  resource_group: camera
-  startup_app: com.hypergryph.arknights
-  success_message: ''
-  target_resolution: 1920x1080
-  temp_log_path: null
+  resource_group: "camera"
+  task_type: "maa"
   trigger:
-    cron_expression: 0 9 * * *
-    interval_seconds: null
-    random_distribution: uniform
-    random_end_time: null
-    random_start_time: null
-    trigger_type: cron
-  working_directory: null
-- description: 这是一个测试任务
-  emulator_device_id: null
-  enable_global_log: true
-  enable_temp_log: false
-  enabled: true
-  environment_variables: {}
-  failure_message: ''
-  id: 9e2a744f-3fc9-4909-a859-0e04f8be5b8b
-  is_emulator_task: false
-  keyword_message: ''
-  keyword_notification: false
-  log_keywords: []
-  main_command: maa
-  name: 测试任务
-  notify_on_failure: true
-  notify_on_success: false
-  pre_commands: []
-  priority: 5
-  resource_group: default
-  startup_app: null
-  success_message: ''
-  target_resolution: null
-  temp_log_path: null
-  trigger:
-    cron_expression: 0 9 * * *
-    interval_seconds: null
-    random_distribution: uniform
-    random_end_time: null
-    random_start_time: null
-    trigger_type: cron
-  working_directory: null
-- description: 这是一个测试任务
-  emulator_device_id: null
-  enable_global_log: true
-  enable_temp_log: false
-  enabled: true
-  environment_variables: {}
-  failure_message: ''
-  id: 52806a2a-8910-4010-9c2d-181e5118583f
-  is_emulator_task: false
-  keyword_message: ''
-  keyword_notification: false
-  log_keywords: []
-  main_command: maa
-  name: 测试任务
-  notify_on_failure: true
-  notify_on_success: false
-  pre_commands: []
-  priority: 5
-  resource_group: default
-  startup_app: null
-  success_message: ''
-  target_resolution: null
-  temp_log_path: null
-  trigger:
-    cron_expression: 0 9 * * *
-    interval_seconds: null
-    random_distribution: uniform
-    random_end_time: null
-    random_start_time: null
-    trigger_type: cron
-  working_directory: null
-- description: 这是一个测试任务
-  emulator_device_id: null
-  enable_global_log: true
-  enable_temp_log: false
-  enabled: true
-  environment_variables: {}
-  failure_message: ''
-  id: 1c978594-a53f-410d-a9b3-922535676253
-  is_emulator_task: false
-  keyword_message: ''
-  keyword_notification: false
-  log_keywords: []
-  main_command: maa
-  name: 测试任务
-  notify_on_failure: true
-  notify_on_success: false
-  pre_commands: []
-  priority: 5
-  resource_group: default
-  startup_app: null
-  success_message: ''
-  target_resolution: null
-  temp_log_path: null
-  trigger:
-    cron_expression: 0 9 * * *
-    interval_seconds: null
-    random_distribution: uniform
-    random_end_time: null
-    random_start_time: null
-    trigger_type: cron
-  working_directory: null
+    trigger_type: "scheduled"
+    start_time: "09:00"
+    end_time: "18:00"
+    cron_expression: "0 9 * * *"
+  execution:
+    command: "echo '模拟 MAA 任务执行' && sleep 5 && echo '任务完成'"
+    enable_adb_wakeup: true
+    adb_device_id: "127.0.0.1:5555"
+  post_task:
+    log_config:
+      enable_global_log: true
+      enable_temp_log: true
+    notifications:
+      notify_on_success: false
+      notify_on_failure: true
+      failure_notification:
+        title: "MAA任务失败"
+        tag: "maa_error"
+        content: "MAA任务 {task_name} 执行失败，请检查设备状态"
+    keyword_monitoring:
+      enabled: true
+      keywords: ["error", "failed", "timeout"]
+      notification:
+        title: "MAA任务异常"
+        tag: "maa_warning" 
+        content: "MAA任务 {task_name} 检测到关键词: {matched_keywords}"

@@ -105,39 +105,35 @@ class TaskExecutor:
     async def _execute_pre_tasks(self, task_config: TaskConfig) -> bool:
         """执行前置任务"""
         try:
-            if task_config.is_emulator_task:
-                logger.info(f"执行模拟器前置任务: {task_config.name}")
+            # MAA任务的ADB前置处理
+            if task_config.task_type == "maa" and task_config.enable_adb_wakeup:
+                logger.info(f"执行MAA任务ADB前置处理: {task_config.name}")
                 
-                # ADB 设备控制
-                if task_config.emulator_device_id:
+                # 获取设备ID，如果没有配置则使用默认值
+                device_id = getattr(task_config, 'emulator_device_id', '127.0.0.1:5555')
+                
+                try:
                     # 唤醒设备屏幕
-                    await self._run_adb_command(task_config.emulator_device_id, "input keyevent KEYCODE_WAKEUP")
+                    logger.info(f"唤醒设备屏幕: {device_id}")
+                    await self._run_adb_command(device_id, "input keyevent KEYCODE_WAKEUP")
                     await asyncio.sleep(1)
                     
-                    # 设置分辨率
-                    if task_config.target_resolution:
-                        width, height = task_config.target_resolution.split('x')
+                    # 设置分辨率（如果配置了）
+                    target_resolution = getattr(task_config, 'target_resolution', None)
+                    if target_resolution and 'x' in target_resolution:
+                        logger.info(f"设置屏幕分辨率: {target_resolution}")
+                        width, height = target_resolution.split('x')
                         await self._run_adb_command(
-                            task_config.emulator_device_id, 
+                            device_id, 
                             f"shell wm size {width}x{height}"
                         )
                         await asyncio.sleep(2)
                     
-                    # 启动应用
-                    if task_config.startup_app:
-                        await self._run_adb_command(
-                            task_config.emulator_device_id,
-                            f"shell monkey -p {task_config.startup_app} -c android.intent.category.LAUNCHER 1"
-                        )
-                        await asyncio.sleep(3)
-            
-            # 执行前置命令
-            for cmd in task_config.pre_commands:
-                logger.info(f"执行前置命令: {cmd}")
-                success, _, _, _ = await self._run_shell_command(cmd, task_config.working_directory)
-                if not success:
-                    logger.error(f"前置命令执行失败: {cmd}")
-                    return False
+                    logger.info("ADB前置处理完成")
+                    
+                except Exception as adb_error:
+                    logger.warning(f"ADB前置处理失败，但继续执行任务: {adb_error}")
+                    # ADB失败不影响主任务执行，只记录警告
             
             return True
             
@@ -149,22 +145,19 @@ class TaskExecutor:
         """执行主任务"""
         logger.info(f"执行主任务: {task_config.main_command}")
         
-        # 设置工作目录
-        cwd = task_config.working_directory or os.getcwd()
+        # 设置工作目录（使用当前目录作为默认值）
+        cwd = getattr(task_config, 'working_directory', os.getcwd())
         
         # 设置环境变量
         env = os.environ.copy()
-        env.update(task_config.environment_variables)
+        env_vars = getattr(task_config, 'environment_variables', {})
+        env.update(env_vars)
         
         # 设置日志文件
         temp_log_file = None
         if task_config.enable_temp_log:
-            if task_config.temp_log_path:
-                temp_log_file = task_config.temp_log_path
-            else:
-                # 创建临时日志文件
-                temp_log_file = self._create_temp_log_file(task_config.id)
-            
+            # 总是创建新的临时日志文件
+            temp_log_file = self._create_temp_log_file(task_config.id)
             self.temp_log_files[task_config.id] = temp_log_file
         
         # 执行命令
@@ -179,31 +172,62 @@ class TaskExecutor:
     async def _execute_post_tasks(self, task_config: TaskConfig, result: TaskResult):
         """执行后置任务"""
         try:
+            # 准备通知变量
+            variables = {
+                'task_name': task_config.name,
+                'timestamp': result.end_time.strftime('%Y-%m-%d %H:%M:%S') if result.end_time else '',
+                'duration': f"{result.duration:.2f}秒" if result.duration else '',
+                'output': result.stdout[:500] + '...' if len(result.stdout) > 500 else result.stdout,
+                'error_message': result.stderr[:300] + '...' if len(result.stderr) > 300 else result.stderr,
+            }
+            
             # 发送任务完成通知
-            if (result.success and task_config.notify_on_success) or \
-               (not result.success and task_config.notify_on_failure):
-                
-                custom_message = ""
-                if result.success and task_config.success_message:
-                    custom_message = task_config.success_message
-                elif not result.success and task_config.failure_message:
-                    custom_message = task_config.failure_message
-                
-                await notification_service.notify_task_completed(
-                    task_config.name,
-                    task_config.id,
-                    result.success,
-                    custom_message or result.message
-                )
+            if result.success and hasattr(task_config, 'post_task') and task_config.post_task and task_config.post_task.notify_on_success:
+                logger.info(f"发送成功通知: {task_config.name}")
+                await self._send_notification(task_config.post_task.success_notification, variables)
+            
+            elif not result.success and hasattr(task_config, 'post_task') and task_config.post_task and task_config.post_task.notify_on_failure:
+                logger.info(f"发送失败通知: {task_config.name}")
+                await self._send_notification(task_config.post_task.failure_notification, variables)
             
             # 检查关键词匹配
-            if task_config.keyword_notification and task_config.log_keywords:
-                await self._check_log_keywords(task_config, result)
+            if (hasattr(task_config, 'post_task') and task_config.post_task and 
+                task_config.post_task.enable_keyword_monitoring and task_config.post_task.log_keywords):
+                await self._check_log_keywords(task_config, result, variables)
         
         except Exception as e:
             logger.error(f"后置任务执行异常: {e}", exc_info=True)
     
-    async def _check_log_keywords(self, task_config: TaskConfig, result: TaskResult):
+    async def _send_notification(self, notification_config, variables):
+        """发送通知"""
+        if not notification_config:
+            return
+            
+        try:
+            # 替换变量
+            title = self._replace_variables(notification_config.title, variables)
+            content = self._replace_variables(notification_config.content, variables)
+            
+            # 发送通知
+            await notification_service.send_notification(
+                title=title,
+                content=content,
+                tags=notification_config.tag.split(',') if notification_config.tag else []
+            )
+        except Exception as e:
+            logger.error(f"发送通知失败: {e}")
+    
+    def _replace_variables(self, text: str, variables: Dict[str, str]) -> str:
+        """替换变量"""
+        if not text:
+            return ""
+        
+        result = text
+        for key, value in variables.items():
+            result = result.replace(f"{{{key}}}", str(value))
+        return result
+    
+    async def _check_log_keywords(self, task_config: TaskConfig, result: TaskResult, variables: Dict[str, str]):
         """检查日志关键词"""
         try:
             log_content = ""
@@ -221,17 +245,30 @@ class TaskExecutor:
             
             # 检查关键词
             matched_keywords = []
-            for keyword in task_config.log_keywords:
-                if keyword.lower() in log_content.lower():
-                    matched_keywords.append(keyword)
+            matched_lines = []
+            
+            for line in log_content.split('\n'):
+                for keyword in task_config.post_task.log_keywords:
+                    if keyword.strip().lower() in line.lower():
+                        if keyword not in matched_keywords:
+                            matched_keywords.append(keyword)
+                        matched_lines.append(line.strip())
             
             # 发送关键词匹配通知
             if matched_keywords:
-                await notification_service.notify_keyword_matched(
-                    task_config.name,
-                    task_config.id,
-                    matched_keywords,
-                    task_config.keyword_message
+                logger.info(f"检测到关键词匹配: {matched_keywords}")
+                
+                # 更新变量
+                keyword_variables = variables.copy()
+                keyword_variables.update({
+                    'matched_keywords': ', '.join(matched_keywords),
+                    'matched_lines': '\n'.join(matched_lines[:5]),  # 最多显示5行
+                    'keywords': ', '.join(matched_keywords)  # 向后兼容
+                })
+                
+                await self._send_notification(
+                    task_config.post_task.keyword_notification,
+                    keyword_variables
                 )
         
         except Exception as e:

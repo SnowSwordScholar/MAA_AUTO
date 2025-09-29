@@ -1,0 +1,27 @@
+logging:
+  backup_count: 5
+  file: logs/maa_scheduler.log
+  level: INFO
+  max_size: 10MB
+resource_groups:
+- description: 默认资源分组
+  max_concurrent: 2
+  name: default
+  resources: []
+- description: 摄像头设备分组
+  max_concurrent: 1
+  name: camera
+  resources:
+  - camera
+- description: 通用任务分组
+  max_concurrent: 3
+  name: general
+  resources: []
+scheduler:
+  max_workers: 4
+  mode: scheduler
+  task_timeout: 3600
+web:
+  debug: false
+  host: 127.0.0.1
+  port: 8081

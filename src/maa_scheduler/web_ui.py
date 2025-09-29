@@ -436,15 +436,53 @@ async def get_config():
 
 @app.post("/api/config")
 async def update_config(config_data: dict):
-    """更新配置（预留接口）"""
+    """更新配置"""
     try:
-        # 这里可以实现配置更新逻辑
-        # 目前只是演示，实际需要根据具体需求实现
-        logger.info(f"配置更新请求: {config_data}")
-        return {"message": "配置更新功能开发中"}
+        logger.info(f"收到配置更新请求: {config_data}")
+        
+        # 更新应用配置
+        config_file = Path("config/config.yaml")
+        if config_file.exists():
+            import yaml
+            
+            # 读取现有配置
+            with open(config_file, 'r', encoding='utf-8') as f:
+                existing_config = yaml.safe_load(f) or {}
+            
+            # 更新配置字段
+            if 'scheduler' not in existing_config:
+                existing_config['scheduler'] = {}
+            if 'web' not in existing_config:
+                existing_config['web'] = {}
+            if 'logging' not in existing_config:
+                existing_config['logging'] = {}
+            
+            # 应用新的配置值
+            if 'max_workers' in config_data:
+                existing_config['scheduler']['max_workers'] = int(config_data['max_workers'])
+            if 'task_timeout' in config_data:
+                existing_config['scheduler']['task_timeout'] = int(config_data['task_timeout'])
+            if 'web_host' in config_data:
+                existing_config['web']['host'] = config_data['web_host']
+            if 'web_port' in config_data:
+                existing_config['web']['port'] = int(config_data['web_port'])
+            if 'debug' in config_data:
+                existing_config['web']['debug'] = bool(config_data['debug'])
+            if 'log_level' in config_data:
+                existing_config['logging']['level'] = config_data['log_level']
+            
+            # 保存配置
+            with open(config_file, 'w', encoding='utf-8') as f:
+                yaml.dump(existing_config, f, default_flow_style=False, allow_unicode=True)
+            
+            logger.info("配置已保存")
+            return {"message": "配置保存成功", "restart_required": True}
+        else:
+            raise HTTPException(status_code=404, detail="配置文件不存在")
+            
     except Exception as e:
         logger.error(f"更新配置失败: {e}")
-        raise HTTPException(status_code=500, detail="更新配置失败")
+        raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
 
 
 @app.get("/api/logs")

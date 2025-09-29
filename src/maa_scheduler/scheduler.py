@@ -287,38 +287,65 @@ class TaskScheduler:
         """创建触发器"""
         trigger_config = task.trigger
         
-        if trigger_config.trigger_type == "cron":
-            if not trigger_config.cron_expression:
-                logger.error(f"Cron 触发器缺少表达式: {task.name}")
-                return None
-            
+        if trigger_config.trigger_type == "scheduled":
+            # 定时执行：支持在用户设定的固定时间段内执行任务
+            return self._create_scheduled_trigger(task)
+        
+        elif trigger_config.trigger_type == "interval":
+            # 间隔执行：基于上次执行完成时间，在设定的间隔后再次执行
+            return self._create_interval_trigger(task)
+        
+        elif trigger_config.trigger_type == "random_time":
+            # 随机时间执行：在用户设定的时间段内随机选择一个时间点执行
+            return self._create_random_time_trigger(task)
+        
+        else:
+            logger.error(f"未知的触发器类型: {trigger_config.trigger_type}")
+            return None
+    
+    def _create_scheduled_trigger(self, task: TaskConfig):
+        """创建定时执行触发器：支持在用户设定的固定时间段内执行任务"""
+        trigger_config = task.trigger
+        
+        # 如果使用精确的Cron表达式
+        if hasattr(trigger_config, 'use_cron') and trigger_config.use_cron and trigger_config.cron_expression:
             try:
                 return CronTrigger.from_crontab(trigger_config.cron_expression)
             except Exception as e:
                 logger.error(f"无效的 Cron 表达式: {trigger_config.cron_expression}, 错误: {e}")
                 return None
         
-        elif trigger_config.trigger_type == "interval":
-            if not trigger_config.interval_seconds:
-                logger.error(f"间隔触发器缺少间隔时间: {task.name}")
+        # 使用时间段配置
+        if trigger_config.start_time and trigger_config.end_time:
+            try:
+                # 在开始时间执行（未来可扩展为时间段内多次执行）
+                hour, minute = map(int, trigger_config.start_time.split(':'))
+                return CronTrigger(hour=hour, minute=minute)
+            except Exception as e:
+                logger.error(f"无效的定时时间: {trigger_config.start_time}, 错误: {e}")
                 return None
-            
-            return IntervalTrigger(seconds=trigger_config.interval_seconds)
         
-        elif trigger_config.trigger_type == "random":
-            # 随机触发器需要特殊处理
-            return self._create_random_trigger(task)
-        
-        else:
-            logger.error(f"未知的触发器类型: {trigger_config.trigger_type}")
-            return None
+        logger.error(f"定时触发器配置不完整: {task.name}")
+        return None
     
-    def _create_random_trigger(self, task: TaskConfig):
-        """创建随机触发器"""
+    def _create_interval_trigger(self, task: TaskConfig):
+        """创建间隔执行触发器：基于上次执行完成时间，在设定的间隔后再次执行"""
         trigger_config = task.trigger
         
-        if not trigger_config.random_start_time or not trigger_config.random_end_time:
-            logger.error(f"随机触发器缺少时间范围: {task.name}")
+        if not trigger_config.interval_minutes:
+            logger.error(f"间隔触发器缺少间隔时间: {task.name}")
+            return None
+        
+        # 创建间隔触发器，使用分钟作为单位
+        return IntervalTrigger(minutes=trigger_config.interval_minutes)
+    
+    def _create_random_time_trigger(self, task: TaskConfig):
+        """创建随机时间触发器：在用户设定的时间段内随机选择一个时间点执行"""
+        trigger_config = task.trigger
+        
+        if not hasattr(trigger_config, 'random_start_time') or not trigger_config.random_start_time or \
+           not hasattr(trigger_config, 'random_end_time') or not trigger_config.random_end_time:
+            logger.error(f"随机时间触发器缺少时间范围: {task.name}")
             return None
         
         # 计算下一个随机时间

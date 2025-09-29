@@ -5,8 +5,9 @@
 
 import os
 import yaml
+import uuid
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -26,60 +27,127 @@ class ResourceGroup(BaseModel):
     max_concurrent: int = Field(default=1, description="最大并发任务数")
     resources: List[str] = Field(default_factory=list, description="资源列表")
 
+class NotificationConfig(BaseModel):
+    """通知配置"""
+    title: str = "MAA调度器通知"
+    tag: str = "maa-scheduler" 
+    content: str = "任务状态更新"
+
+class LogConfig(BaseModel):
+    """日志配置"""
+    enable_global_log: bool = True
+    enable_temp_log: bool = False
+
+class NotificationsConfig(BaseModel):
+    """通知配置组"""
+    notify_on_success: bool = False
+    notify_on_failure: bool = True
+    success_notification: Optional[NotificationConfig] = None
+    failure_notification: Optional[NotificationConfig] = None
+
+class KeywordMonitoring(BaseModel):
+    """关键词监控配置"""
+    enabled: bool = False
+    keywords: List[str] = Field(default_factory=list)
+    notification: Optional[NotificationConfig] = None
+
+class PostTaskConfig(BaseModel):
+    """后置任务配置"""
+    log_config: LogConfig = Field(default_factory=LogConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig) 
+    keyword_monitoring: KeywordMonitoring = Field(default_factory=KeywordMonitoring)
+
+class ExecutionConfig(BaseModel):
+    """执行配置"""
+    command: str
+    enable_adb_wakeup: bool = False
+    adb_device_id: Optional[str] = None
+
 class TriggerConfig(BaseModel):
     """触发器配置"""
-    trigger_type: str = Field(..., description="触发器类型: cron, interval, random")
+    trigger_type: Literal["scheduled", "interval", "random_time"]
     
-    # Cron 触发器参数
-    cron_expression: Optional[str] = Field(None, description="Cron 表达式")
+    # 定时执行：支持在用户设定的固定时间段内执行任务（例如，每天 9:00-18:00）
+    start_time: Optional[str] = None  # 开始时间，如 "09:00"
+    end_time: Optional[str] = None    # 结束时间，如 "18:00"
+    cron_expression: Optional[str] = None  # 精确定时使用cron表达式
     
-    # 间隔触发器参数
-    interval_seconds: Optional[int] = Field(None, description="间隔秒数")
+    # 间隔执行：基于上次执行完成时间，在设定的间隔后再次执行（例如，每 2 小时执行一次）
+    interval_minutes: Optional[int] = None  # 间隔分钟数
     
-    # 随机触发器参数
-    random_start_time: Optional[str] = Field(None, description="随机开始时间 HH:MM")
-    random_end_time: Optional[str] = Field(None, description="随机结束时间 HH:MM")
-    random_distribution: str = Field(default="uniform", description="随机分布类型")
+    # 随机时间执行：在用户设定的时间段内（如 10:00-12:00），随机选择一个时间点执行
+    random_start_time: Optional[str] = None  # 随机开始时间，如 "10:00"
+    random_end_time: Optional[str] = None    # 随机结束时间，如 "12:00"
+    random_distribution: Literal["uniform", "normal"] = "uniform"
 
 class TaskConfig(BaseModel):
     """任务配置"""
-    id: str = Field(..., description="任务 ID")
-    name: str = Field(..., description="任务名称")
-    description: str = Field(default="", description="任务描述")
-    enabled: bool = Field(default=True, description="是否启用")
-    priority: int = Field(default=5, description="优先级 (1-10)")
-    resource_group: str = Field(..., description="资源分组")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    description: str = ""
+    enabled: bool = True
     
-    # 触发配置
+    # 优先级和资源配置
+    priority: int = Field(default=5, ge=1, le=10)
+    resource_group: str = "default"
+    
+    # 任务类型：控制台任务 或 MAA任务
+    task_type: Literal["console", "maa"] = "console"
+    
+    # 触发器配置
     trigger: TriggerConfig
     
-    # 前置任务
-    is_emulator_task: bool = Field(default=False, description="是否为模拟器任务")
-    emulator_device_id: Optional[str] = Field(None, description="模拟器设备 ID")
-    target_resolution: Optional[str] = Field(None, description="目标分辨率")
-    startup_app: Optional[str] = Field(None, description="启动应用")
-    pre_commands: List[str] = Field(default_factory=list, description="前置命令")
+    # 执行配置
+    execution: Optional[ExecutionConfig] = None
     
-    # 任务荷载
-    main_command: str = Field(..., description="主要执行命令")
-    working_directory: Optional[str] = Field(None, description="工作目录")
-    environment_variables: Dict[str, str] = Field(default_factory=dict, description="环境变量")
+    # 后置任务配置
+    post_task: PostTaskConfig = Field(default_factory=PostTaskConfig)
+    
+    # === 兼容字段（向后兼容旧配置） ===
+    # 执行配置：直接为命令（支持复杂的MAA命令）
+    main_command: Optional[str] = None
+    working_directory: Optional[str] = None
+    environment_variables: Dict[str, str] = Field(default_factory=dict)
+    
+    # 前置任务配置（针对MAA任务）
+    enable_adb_wakeup: bool = False  # MAA任务是否启用ADB唤醒屏幕
+    emulator_device_id: Optional[str] = None
+    target_resolution: Optional[str] = None
+    startup_app: Optional[str] = None
     
     # 日志配置
-    enable_global_log: bool = Field(default=True, description="启用全局日志")
-    enable_temp_log: bool = Field(default=False, description="启用临时日志")
-    temp_log_path: Optional[str] = Field(None, description="临时日志路径")
+    enable_global_log: bool = True
+    enable_temp_log: bool = False  # 临时日志选项
+    temp_log_path: Optional[str] = None
     
-    # 后置任务
-    notify_on_success: bool = Field(default=False, description="成功时通知")
-    notify_on_failure: bool = Field(default=True, description="失败时通知")
-    success_message: str = Field(default="", description="成功通知消息")
-    failure_message: str = Field(default="", description="失败通知消息")
+    # 其他兼容字段（向后兼容旧配置）
+    is_emulator_task: Optional[bool] = None
+    pre_commands: List[str] = Field(default_factory=list)
+    notify_on_success: bool = False
+    notify_on_failure: bool = True
+    success_message: str = ""
+    failure_message: str = ""
+    keyword_notification: bool = False
+    keyword_message: str = ""
+    log_keywords: List[str] = Field(default_factory=list)
     
-    # 日志关键词监控
-    log_keywords: List[str] = Field(default_factory=list, description="监控关键词")
-    keyword_notification: bool = Field(default=False, description="关键词匹配时通知")
-    keyword_message: str = Field(default="", description="关键词通知消息")
+    def get_execution_command(self) -> str:
+        """获取执行命令（兼容新旧配置）"""
+        if self.execution:
+            return self.execution.command
+        return self.main_command or ""
+    
+    def get_adb_wakeup_enabled(self) -> bool:
+        """获取ADB唤醒是否启用（兼容新旧配置）"""
+        if self.execution:
+            return self.execution.enable_adb_wakeup
+        return self.enable_adb_wakeup
+    
+    def get_adb_device_id(self) -> Optional[str]:
+        """获取ADB设备ID（兼容新旧配置）"""
+        if self.execution:
+            return self.execution.adb_device_id
+        return self.emulator_device_id
 
 class AppConfig(BaseModel):
     """应用配置"""

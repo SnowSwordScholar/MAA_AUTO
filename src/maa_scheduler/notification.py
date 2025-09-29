@@ -69,30 +69,63 @@ class NotificationService:
         message = f"任务 {task_name} (ID: {task_id}) 开始执行"
         await self.send_webhook_notification(title, message, tags="任务,开始")
     
-    async def notify_task_completed(self, task_name: str, task_id: str, success: bool, message: str = ""):
+    async def notify_task_completed(self, task_name: str, task_id: str, success: bool, message: str = "", 
+                                   notification_config: dict = None):
         """任务完成通知"""
         status = "成功" if success else "失败"
-        title = f"任务{status} - {task_name}"
         
-        if message:
-            full_message = f"任务 {task_name} (ID: {task_id}) 执行{status}\n\n详情: {message}"
+        # 使用自定义配置或默认配置
+        if notification_config and any(notification_config.values()):
+            title = notification_config.get("title") or f"任务{status} - {task_name}"
+            tags = notification_config.get("tag") or f"任务,{status}"
+            content = notification_config.get("content") or message
+            
+            # 替换占位符
+            title = title.replace("{task_name}", task_name).replace("{status}", status)
+            content = content.replace("{task_name}", task_name).replace("{task_id}", task_id).replace("{status}", status)
+            if message:
+                content = content.replace("{message}", message)
+                
+            full_message = content
         else:
-            full_message = f"任务 {task_name} (ID: {task_id}) 执行{status}"
+            # 默认格式
+            title = f"任务{status} - {task_name}"
+            if message:
+                full_message = f"任务 {task_name} (ID: {task_id}) 执行{status}\n\n详情: {message}"
+            else:
+                full_message = f"任务 {task_name} (ID: {task_id}) 执行{status}"
+            tags = f"任务,{status}"
         
-        tags = f"任务,{status}"
         await self.send_webhook_notification(title, full_message, tags=tags)
     
-    async def notify_keyword_matched(self, task_name: str, task_id: str, keywords: list, message: str = ""):
+    async def notify_keyword_matched(self, task_name: str, task_id: str, keywords: list, message: str = "",
+                                   notification_config: dict = None):
         """关键词匹配通知"""
-        title = f"关键词触发 - {task_name}"
         keywords_str = ", ".join(keywords)
         
-        if message:
-            full_message = f"任务 {task_name} (ID: {task_id}) 日志中发现关键词: {keywords_str}\n\n详情: {message}"
+        # 使用自定义配置或默认配置
+        if notification_config and any(notification_config.values()):
+            title = notification_config.get("title") or f"关键词触发 - {task_name}"
+            tags = notification_config.get("tag") or "关键词,监控"
+            content = notification_config.get("content") or f"发现关键词: {keywords_str}"
+            
+            # 替换占位符
+            title = title.replace("{task_name}", task_name).replace("{keywords}", keywords_str)
+            content = content.replace("{task_name}", task_name).replace("{task_id}", task_id).replace("{keywords}", keywords_str)
+            if message:
+                content = content.replace("{message}", message)
+                
+            full_message = content
         else:
-            full_message = f"任务 {task_name} (ID: {task_id}) 日志中发现关键词: {keywords_str}"
+            # 默认格式
+            title = f"关键词触发 - {task_name}"
+            if message:
+                full_message = f"任务 {task_name} (ID: {task_id}) 日志中发现关键词: {keywords_str}\n\n详情: {message}"
+            else:
+                full_message = f"任务 {task_name} (ID: {task_id}) 日志中发现关键词: {keywords_str}"
+            tags = "关键词,监控"
         
-        await self.send_webhook_notification(title, full_message, tags="关键词,监控")
+        await self.send_webhook_notification(title, full_message, tags=tags)
     
     async def notify_scheduler_status(self, status: str, message: str = ""):
         """调度器状态通知"""

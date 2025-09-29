@@ -284,10 +284,9 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">任务类型</label>
-                            <select class="form-select" id="taskType" name="type">
-                                <option value="maa_task">MAA 任务</option>
-                                <option value="emulator_task">模拟器任务</option>
-                                <option value="custom_task">自定义任务</option>
+                            <select class="form-select" id="taskType" name="task_type" onchange="toggleAdbOption()">
+                                <option value="console">控制台任务</option>
+                                <option value="maa">MAA 任务</option>
                             </select>
                         </div>
                     </div>
@@ -297,52 +296,114 @@
                         <textarea class="form-control" id="taskDescription" name="description" rows="2"></textarea>
                     </div>
                     
+                    <!-- 执行配置 -->
+                    <h6 class="mb-3"><i class="bi bi-terminal"></i> 执行配置</h6>
+                    <div class="mb-3">
+                        <label class="form-label">命令 <span class="text-danger">*</span></label>
+                        <textarea class="form-control font-monospace" id="mainCommand" name="main_command" 
+                                  rows="3" placeholder="输入要执行的完整命令" required></textarea>
+                        <small class="form-text text-muted">支持复杂的 MAA 命令，请手动输入完整的命令行</small>
+                    </div>
+                    
+                    <!-- ADB唤醒选项（仅MAA任务显示） -->
+                    <div id="adbWakeupOption" style="display: none;">
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="enableAdbWakeup" name="enable_adb_wakeup">
+                            <label class="form-check-label" for="enableAdbWakeup">
+                                启用 ADB 唤醒屏幕
+                            </label>
+                            <small class="form-text text-muted d-block">执行任务前自动唤醒模拟器屏幕</small>
+                        </div>
+                        <div id="emulatorConfig" style="display: none;">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">模拟器设备ID</label>
+                                    <input type="text" class="form-control" id="emulatorDeviceId" name="emulator_device_id" 
+                                           placeholder="127.0.0.1:5555">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">目标分辨率</label>
+                                    <input type="text" class="form-control" id="targetResolution" name="target_resolution" 
+                                           placeholder="1920x1080">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- 调度配置 -->
                     <h6 class="mb-3"><i class="bi bi-clock"></i> 调度配置</h6>
                     <div class="row mb-3">
                         <div class="col-md-4">
                             <label class="form-label">触发类型</label>
-                            <select class="form-select" id="triggerType" name="trigger_type">
-                                <option value="cron">Cron 表达式</option>
-                                <option value="interval">固定间隔</option>
-                                <option value="random">随机间隔</option>
+                            <select class="form-select" id="triggerType" name="trigger_type" onchange="changeTriggerType()">
+                                <option value="timed">定时执行</option>
+                                <option value="interval">间隔执行</option>
+                                <option value="random">随机时间执行</option>
                             </select>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">优先级</label>
                             <select class="form-select" id="taskPriority" name="priority">
-                                <option value="1">低</option>
-                                <option value="5" selected>正常</option>
-                                <option value="10">高</option>
+                                <option value="1">低 (1)</option>
+                                <option value="5" selected>正常 (5)</option>
+                                <option value="10">高 (10)</option>
                             </select>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">资源分组</label>
                             <select class="form-select" id="resourceGroup" name="resource_group">
                                 <option value="default">默认分组</option>
+                                <option value="general">通用任务分组</option>
+                                <option value="camera">摄像头设备分组</option>
                             </select>
                         </div>
                     </div>
                     
                     <!-- 触发器配置 -->
-                    <div id="cronConfig" class="trigger-config">
-                        <div class="mb-3">
-                            <label class="form-label">Cron 表达式</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="cronExpression" name="cron_expression" placeholder="0 9 * * *">
-                                <button class="btn btn-outline-secondary" type="button" onclick="showCronHelper()">
-                                    <i class="bi bi-question-circle"></i>
-                                </button>
+                    <div id="timedConfig" class="trigger-config">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 定时执行：支持在用户设定的固定时间段内执行任务（例如，每天 9:00-18:00）
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="useCronExpression" name="use_cron" onchange="toggleCronExpression()">
+                            <label class="form-check-label" for="useCronExpression">
+                                使用精确的 Cron 表达式
+                            </label>
+                        </div>
+                        <div id="timeRangeDiv">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">开始时间</label>
+                                    <input type="time" class="form-control" id="timedStartTime" name="start_time" value="09:00">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">结束时间</label>
+                                    <input type="time" class="form-control" id="timedEndTime" name="end_time" value="18:00">
+                                </div>
                             </div>
-                            <small class="form-text text-muted">格式: 分 时 日 月 周 (例: 0 9 * * * 表示每天9点)</small>
+                        </div>
+                        <div id="cronExpressionDiv" style="display: none;">
+                            <div class="mb-3">
+                                <label class="form-label">Cron 表达式</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="cronExpression" name="cron_expression" placeholder="0 9 * * *">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="showCronHelper()">
+                                        <i class="bi bi-question-circle"></i>
+                                    </button>
+                                </div>
+                                <small class="form-text text-muted">格式: 分 时 日 月 周 (例: 0 9 * * * 表示每天9点)</small>
+                            </div>
                         </div>
                     </div>
                     
                     <div id="intervalConfig" class="trigger-config" style="display: none;">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 间隔执行：基于上次执行完成时间，在设定的间隔后再次执行（例如，每 2 小时执行一次）
+                        </div>
                         <div class="row mb-3">
                             <div class="col-md-6">
-                                <label class="form-label">间隔时间</label>
-                                <input type="number" class="form-control" id="intervalTime" name="interval_time" value="60" min="1">
+                                <label class="form-label">间隔小时数</label>
+                                <input type="number" class="form-control" id="intervalHours" name="interval_hours" value="2" min="1" max="168">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">时间单位</label>
@@ -350,21 +411,23 @@
                                     <option value="seconds">秒</option>
                                     <option value="minutes">分钟</option>
                                     <option value="hours">小时</option>
-                                    <option value="days">天</option>
                                 </select>
                             </div>
                         </div>
                     </div>
                     
-                    <div id="randomConfig" class="trigger-config" style="display: none;">
+                    <div id="random_timeConfig" class="trigger-config" style="display: none;">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 随机时间：在指定时间段内随机选择一个时间点执行（如10:00-12:00内随机执行）。
+                        </div>
                         <div class="row mb-3">
                             <div class="col-md-6">
-                                <label class="form-label">最小间隔 (分钟)</label>
-                                <input type="number" class="form-control" id="minInterval" name="min_interval" value="30" min="1">
+                                <label class="form-label">开始时间</label>
+                                <input type="time" class="form-control" id="randomStartTime" name="random_start_time" value="10:00">
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">最大间隔 (分钟)</label>
-                                <input type="number" class="form-control" id="maxInterval" name="max_interval" value="120" min="1">
+                                <label class="form-label">结束时间</label>
+                                <input type="time" class="form-control" id="randomEndTime" name="random_end_time" value="12:00">
                             </div>
                         </div>
                     </div>
@@ -397,8 +460,8 @@
                         </div>
                         <div class="col-md-4">
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="notifyOnComplete" name="notify_on_complete">
-                                <label class="form-check-label" for="notifyOnComplete">完成时通知</label>
+                                <input class="form-check-input" type="checkbox" id="enableNotification" name="enable_notification">
+                                <label class="form-check-label" for="enableNotification">启用通知</label>
                             </div>
                         </div>
                     </div>
@@ -425,16 +488,143 @@
                                         </div>
                                     </div>
                                     
-                                    <div class="mb-3">
-                                        <label class="form-label">前置命令</label>
-                                        <textarea class="form-control" id="preCommands" name="pre_commands" rows="2" 
-                                                  placeholder="在任务执行前运行的命令，每行一个"></textarea>
+                                    <!-- 日志配置 -->
+                                    <h6 class="mt-4 mb-3"><i class="bi bi-file-text"></i> 日志配置</h6>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="enableGlobalLog" name="enable_global_log" checked>
+                                                <label class="form-check-label" for="enableGlobalLog">
+                                                    启用全局日志
+                                                </label>
+                                                <small class="form-text text-muted d-block">将任务日志实时输出到程序的统一日志中</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="enableTempLog" name="enable_temp_log" onchange="toggleTempLogOptions()">
+                                                <label class="form-check-label" for="enableTempLog">
+                                                    启用临时日志
+                                                </label>
+                                                <small class="form-text text-muted d-block">暂时记录日志到独立文件，供后续分析</small>
+                                            </div>
+                                        </div>
                                     </div>
                                     
-                                    <div class="mb-3">
-                                        <label class="form-label">后置命令</label>
-                                        <textarea class="form-control" id="postCommands" name="post_commands" rows="2" 
-                                                  placeholder="在任务执行后运行的命令，每行一个"></textarea>
+                                    <!-- 后置任务配置 -->
+                                    <h6 class="mt-4 mb-3"><i class="bi bi-arrow-right-circle"></i> 后置任务配置</h6>
+                                    
+                                    <!-- 基本通知配置 -->
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="notifyOnSuccess" name="notify_on_success" onchange="toggleNotificationConfig('success')">
+                                                <label class="form-check-label" for="notifyOnSuccess">
+                                                    <strong>成功时推送通知</strong>
+                                                </label>
+                                                <small class="form-text text-muted d-block">当任务返回"成功"状态时触发推送</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="notifyOnFailure" name="notify_on_failure" onchange="toggleNotificationConfig('failure')">
+                                                <label class="form-check-label" for="notifyOnFailure">
+                                                    <strong>失败时推送通知</strong>
+                                                </label>
+                                                <small class="form-text text-muted d-block">当任务返回"失败"状态时触发推送</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 成功通知配置 -->
+                                    <div id="successNotificationConfig" style="display: none;" class="border rounded p-3 mb-3">
+                                        <h6 class="text-success mb-3"><i class="bi bi-check-circle"></i> 成功通知配置</h6>
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">推送标题</label>
+                                                <input type="text" class="form-control" id="successTitle" name="success_title" 
+                                                       placeholder="任务执行成功 - {task_name}">
+                                                <small class="form-text text-muted">支持变量: {task_name}, {timestamp}</small>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">推送标签</label>
+                                                <input type="text" class="form-control" id="successTag" name="success_tag" 
+                                                       placeholder="MAA,任务,成功">
+                                                <small class="form-text text-muted">用逗号分隔多个标签</small>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">推送内容</label>
+                                            <textarea class="form-control" id="successContent" name="success_content" rows="3"
+                                                      placeholder="任务 {task_name} 于 {timestamp} 执行成功。&#10;执行时长: {duration}&#10;状态: 正常完成"></textarea>
+                                            <small class="form-text text-muted">支持变量: {task_name}, {timestamp}, {duration}, {output}</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 失败通知配置 -->
+                                    <div id="failureNotificationConfig" style="display: none;" class="border rounded p-3 mb-3">
+                                        <h6 class="text-danger mb-3"><i class="bi bi-x-circle"></i> 失败通知配置</h6>
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label">推送标题</label>
+                                                <input type="text" class="form-control" id="failureTitle" name="failure_title" 
+                                                       placeholder="任务执行失败 - {task_name}">
+                                                <small class="form-text text-muted">支持变量: {task_name}, {timestamp}</small>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">推送标签</label>
+                                                <input type="text" class="form-control" id="failureTag" name="failure_tag" 
+                                                       placeholder="MAA,任务,失败">
+                                                <small class="form-text text-muted">用逗号分隔多个标签</small>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">推送内容</label>
+                                            <textarea class="form-control" id="failureContent" name="failure_content" rows="3"
+                                                      placeholder="任务 {task_name} 于 {timestamp} 执行失败。&#10;错误信息: {error_message}&#10;请检查配置和日志"></textarea>
+                                            <small class="form-text text-muted">支持变量: {task_name}, {timestamp}, {duration}, {error_message}, {output}</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 关键词监控配置 -->
+                                    <div id="tempLogOptions" style="display: none;">
+                                        <div class="form-check mb-3">
+                                            <input class="form-check-input" type="checkbox" id="enableKeywordMonitoring" name="enable_keyword_monitoring" onchange="toggleKeywordConfig()">
+                                            <label class="form-check-label" for="enableKeywordMonitoring">
+                                                <strong>启用日志关键词监控</strong>
+                                            </label>
+                                            <small class="form-text text-muted d-block">抓取日志中的关键词，匹配时触发自定义推送</small>
+                                        </div>
+                                        
+                                        <div id="keywordMonitoringConfig" style="display: none;" class="border rounded p-3 mb-3">
+                                            <h6 class="text-warning mb-3"><i class="bi bi-search"></i> 关键词监控配置</h6>
+                                            <div class="mb-3">
+                                                <label class="form-label">监控关键词</label>
+                                                <input type="text" class="form-control" id="logKeywords" name="log_keywords" 
+                                                       placeholder="错误,完成,timeout,success (用逗号分隔)">
+                                                <small class="form-text text-muted">在临时日志中查找这些关键词，匹配时触发通知</small>
+                                            </div>
+                                            <div class="row mb-3">
+                                                <div class="col-md-6">
+                                                    <label class="form-label">推送标题</label>
+                                                    <input type="text" class="form-control" id="keywordTitle" name="keyword_title" 
+                                                           placeholder="关键词触发 - {task_name}">
+                                                    <small class="form-text text-muted">支持变量: {task_name}, {keywords}</small>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">推送标签</label>
+                                                    <input type="text" class="form-control" id="keywordTag" name="keyword_tag" 
+                                                           placeholder="MAA,关键词,监控">
+                                                    <small class="form-text text-muted">用逗号分隔多个标签</small>
+                                                </div>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">推送内容</label>
+                                                <textarea class="form-control" id="keywordContent" name="keyword_content" rows="3"
+                                                          placeholder="任务 {task_name} 的日志中发现关键词: {matched_keywords}&#10;匹配行: {matched_lines}&#10;时间: {timestamp}"></textarea>
+                                                <small class="form-text text-muted">支持变量: {task_name}, {matched_keywords}, {matched_lines}, {timestamp}</small>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -867,7 +1057,16 @@
         document.getElementById('taskForm').reset();
         document.getElementById('taskId').value = '';
         document.getElementById('taskEnabled').checked = true;
-        showTriggerConfig('cron');
+        showTriggerConfig('scheduled');
+        
+        // 隐藏所有通知配置
+        showNotificationConfig('success', false);
+        showNotificationConfig('failure', false);
+        showNotificationConfig('keywordMonitoring', false);
+        
+        // 隐藏Cron表达式
+        document.getElementById('cronExpressionDiv').style.display = 'none';
+        document.getElementById('useCronExpression').checked = false;
     }
 
     // 填充任务表单
@@ -918,6 +1117,14 @@
         const targetConfig = document.getElementById(triggerType + 'Config');
         if (targetConfig) {
             targetConfig.style.display = 'block';
+        }
+    }
+    
+    // 显示通知配置
+    function showNotificationConfig(type, show) {
+        const configDiv = document.getElementById(type + 'NotificationConfig');
+        if (configDiv) {
+            configDiv.style.display = show ? 'block' : 'none';
         }
     }
 
@@ -986,10 +1193,80 @@
         bootstrap.Modal.getInstance(document.getElementById('cronHelperModal')).hide();
     }
 
+    // 切换ADB选项显示
+    function toggleAdbOption() {
+        const taskType = document.getElementById('taskType').value;
+        const adbOption = document.getElementById('adbWakeupOption');
+        if (taskType === 'maa') {
+            adbOption.style.display = 'block';
+        } else {
+            adbOption.style.display = 'none';
+            document.getElementById('enableAdbWakeup').checked = false;
+            toggleEmulatorConfig();
+        }
+    }
+
+    // 切换模拟器配置显示
+    function toggleEmulatorConfig() {
+        const enableAdb = document.getElementById('enableAdbWakeup').checked;
+        const emulatorConfig = document.getElementById('emulatorConfig');
+        emulatorConfig.style.display = enableAdb ? 'block' : 'none';
+    }
+
+    // 切换触发器类型
+    function changeTriggerType() {
+        const triggerType = document.getElementById('triggerType').value;
+        showTriggerConfig(triggerType);
+    }
+
+    // 切换Cron表达式显示
+    function toggleCronExpression() {
+        const useCron = document.getElementById('useCronExpression').checked;
+        const timeRangeDiv = document.getElementById('timeRangeDiv');
+        const cronExpressionDiv = document.getElementById('cronExpressionDiv');
+        
+        if (useCron) {
+            timeRangeDiv.style.display = 'none';
+            cronExpressionDiv.style.display = 'block';
+        } else {
+            timeRangeDiv.style.display = 'block';
+            cronExpressionDiv.style.display = 'none';
+        }
+    }
+
+    // 切换临时日志选项
+    function toggleTempLogOptions() {
+        const enableTempLog = document.getElementById('enableTempLog').checked;
+        const tempLogOptions = document.getElementById('tempLogOptions');
+        tempLogOptions.style.display = enableTempLog ? 'block' : 'none';
+        
+        if (!enableTempLog) {
+            document.getElementById('enableKeywordMonitoring').checked = false;
+            toggleKeywordConfig();
+        }
+    }
+
+    // 切换通知配置显示
+    function toggleNotificationConfig(type) {
+        const checkbox = document.getElementById(`notifyOn${type.charAt(0).toUpperCase() + type.slice(1)}`);
+        const configDiv = document.getElementById(`${type}NotificationConfig`);
+        configDiv.style.display = checkbox.checked ? 'block' : 'none';
+    }
+
+    // 切换关键词配置显示
+    function toggleKeywordConfig() {
+        const enableKeyword = document.getElementById('enableKeywordMonitoring').checked;
+        const keywordConfig = document.getElementById('keywordMonitoringConfig');
+        keywordConfig.style.display = enableKeyword ? 'block' : 'none';
+    }
+
     // 初始化页面
     document.addEventListener('DOMContentLoaded', function() {
         loadTasks();
         loadResourceGroups();
+        
+        // 绑定ADB唤醒选项变化事件
+        document.getElementById('enableAdbWakeup').addEventListener('change', toggleEmulatorConfig);
 
         // 绑定过滤器事件
         document.getElementById('task-search').addEventListener('input', filterTasks);
@@ -999,6 +1276,24 @@
         // 绑定新任务模态框的触发器类型变化事件
         document.getElementById('triggerType').addEventListener('change', function() {
             showTriggerConfig(this.value);
+        });
+        
+        // 绑定Cron表达式选择框
+        document.getElementById('useCronExpression').addEventListener('change', function() {
+            document.getElementById('cronExpressionDiv').style.display = this.checked ? 'block' : 'none';
+        });
+        
+        // 绑定通知配置显示控制
+        document.getElementById('notifyOnSuccess').addEventListener('change', function() {
+            showNotificationConfig('success', this.checked);
+        });
+        
+        document.getElementById('notifyOnFailure').addEventListener('change', function() {
+            showNotificationConfig('failure', this.checked);
+        });
+        
+        document.getElementById('keywordNotification').addEventListener('change', function() {
+            showNotificationConfig('keywordMonitoring', this.checked);
         });
 
         // 触发器类型切换

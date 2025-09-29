@@ -11,10 +11,15 @@ import sys
 from pathlib import Path
 
 import uvicorn
-from .config import config_manager
-from .scheduler import scheduler
-from .web_ui import app
-from .notification import notification_service
+
+# 添加项目根目录到sys.path以支持绝对导入
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from src.maa_scheduler.config import config_manager
+from src.maa_scheduler.scheduler import scheduler
+from src.maa_scheduler.web_ui import app
+from src.maa_scheduler.notification import notification_service
 
 # 设置日志
 def setup_logging():
