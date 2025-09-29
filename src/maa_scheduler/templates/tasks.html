@@ -1,0 +1,1080 @@
+{% extends "base.html" %}
+
+{% block title %}任务管理 - MAA 任务调度器{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-list-task"></i> 任务管理</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-primary" onclick="createTask()">
+                <i class="bi bi-plus-circle"></i> 新建任务
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadTasks()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 任务过滤器 -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <input type="text" class="form-control" id="task-search" placeholder="搜索任务名称...">
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" id="status-filter">
+            <option value="">所有状态</option>
+            <option value="pending">待执行</option>
+            <option value="running">执行中</option>
+            <option value="completed">已完成</option>
+            <option value="failed">失败</option>
+            <option value="cancelled">已取消</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" id="group-filter">
+            <option value="">所有资源分组</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+            <i class="bi bi-x-circle"></i> 清除
+        </button>
+    </div>
+</div>
+
+<!-- 任务列表 -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>任务名称</th>
+                        <th>状态</th>
+                        <th>优先级</th>
+                        <th>资源分组</th>
+                        <th>触发类型</th>
+                        <th>下次执行</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tasks-table-body">
+                    <!-- 任务数据将动态加载 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 创建任务模态框 -->
+<div class="modal fade" id="createTaskModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新建任务</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="task-form">
+                <div class="modal-body">
+                    <!-- 基本信息 -->
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <label class="form-label">任务名称 *</label>
+                            <input type="text" class="form-control" name="name" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">优先级</label>
+                            <select class="form-select" name="priority">
+                                <option value="1">1 (最高)</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5" selected>5 (默认)</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10 (最低)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">任务描述</label>
+                        <textarea class="form-control" name="description" rows="2"></textarea>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">资源分组 *</label>
+                            <select class="form-select" name="resource_group" id="resource-group-select" required>
+                                <!-- 动态加载 -->
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">触发类型 *</label>
+                            <select class="form-select" name="trigger_type" id="trigger-type-select" required>
+                                <option value="cron">Cron 定时</option>
+                                <option value="interval">间隔执行</option>
+                                <option value="random">随机时间</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 触发配置 -->
+                    <div id="trigger-config">
+                        <!-- Cron 触发器 -->
+                        <div id="cron-config" class="trigger-config mb-3">
+                            <label class="form-label">Cron 表达式</label>
+                            <input type="text" class="form-control" name="cron_expression" placeholder="例如: 0 9 * * * (每天9点)">
+                            <small class="form-text text-muted">
+                                格式: 秒 分 时 日 月 周年 
+                                <a href="https://crontab.guru/" target="_blank">在线生成器</a>
+                            </small>
+                        </div>
+                        
+                        <!-- 间隔触发器 -->
+                        <div id="interval-config" class="trigger-config mb-3" style="display: none;">
+                            <label class="form-label">间隔时间 (秒)</label>
+                            <input type="number" class="form-control" name="interval_seconds" min="60" placeholder="3600">
+                            <small class="form-text text-muted">最小间隔 60 秒</small>
+                        </div>
+                        
+                        <!-- 随机触发器 -->
+                        <div id="random-config" class="trigger-config mb-3" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label">开始时间</label>
+                                    <input type="time" class="form-control" name="random_start_time">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">结束时间</label>
+                                    <input type="time" class="form-control" name="random_end_time">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 模拟器任务配置 -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_emulator_task" id="is-emulator-task">
+                            <label class="form-check-label" for="is-emulator-task">
+                                这是一个模拟器任务
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div id="emulator-config" style="display: none;">
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">设备 ID</label>
+                                <input type="text" class="form-control" name="emulator_device_id" placeholder="模拟器设备ID">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">目标分辨率</label>
+                                <input type="text" class="form-control" name="target_resolution" placeholder="1920x1080">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">启动应用</label>
+                                <input type="text" class="form-control" name="startup_app" placeholder="应用包名">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 任务命令 -->
+                    <div class="mb-3">
+                        <label class="form-label">执行命令 *</label>
+                        <input type="text" class="form-control" name="main_command" required placeholder="要执行的命令">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">工作目录</label>
+                        <input type="text" class="form-control" name="working_directory" placeholder="留空使用当前目录">
+                    </div>
+                    
+                    <!-- 日志配置 -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="enable_global_log" id="enable-global-log" checked>
+                                <label class="form-check-label" for="enable-global-log">
+                                    启用全局日志
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="enable_temp_log" id="enable-temp-log">
+                                <label class="form-check-label" for="enable-temp-log">
+                                    启用临时日志
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 通知配置 -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="notify_on_success" id="notify-on-success">
+                                <label class="form-check-label" for="notify-on-success">
+                                    成功时通知
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="notify_on_failure" id="notify-on-failure" checked>
+                                <label class="form-check-label" for="notify-on-failure">
+                                    失败时通知
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">创建任务</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 任务详情模态框 -->
+<div class="modal fade" id="taskDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">任务详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="task-detail-content">
+                <!-- 任务详情内容 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" id="run-task-btn" style="display: none;">立即执行</button>
+                <button type="button" class="btn btn-warning" id="cancel-task-btn" style="display: none;">取消任务</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 任务创建/编辑模态框 -->
+<div class="modal fade" id="taskModal" tabindex="-1" aria-labelledby="taskModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="taskModalLabel">创建任务</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="taskForm">
+                    <input type="hidden" id="taskId" name="id">
+                    
+                    <!-- 基本信息 -->
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">任务名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="taskName" name="name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">任务类型</label>
+                            <select class="form-select" id="taskType" name="type">
+                                <option value="maa_task">MAA 任务</option>
+                                <option value="emulator_task">模拟器任务</option>
+                                <option value="custom_task">自定义任务</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">任务描述</label>
+                        <textarea class="form-control" id="taskDescription" name="description" rows="2"></textarea>
+                    </div>
+                    
+                    <!-- 调度配置 -->
+                    <h6 class="mb-3"><i class="bi bi-clock"></i> 调度配置</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">触发类型</label>
+                            <select class="form-select" id="triggerType" name="trigger_type">
+                                <option value="cron">Cron 表达式</option>
+                                <option value="interval">固定间隔</option>
+                                <option value="random">随机间隔</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">优先级</label>
+                            <select class="form-select" id="taskPriority" name="priority">
+                                <option value="1">低</option>
+                                <option value="5" selected>正常</option>
+                                <option value="10">高</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">资源分组</label>
+                            <select class="form-select" id="resourceGroup" name="resource_group">
+                                <option value="default">默认分组</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- 触发器配置 -->
+                    <div id="cronConfig" class="trigger-config">
+                        <div class="mb-3">
+                            <label class="form-label">Cron 表达式</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="cronExpression" name="cron_expression" placeholder="0 9 * * *">
+                                <button class="btn btn-outline-secondary" type="button" onclick="showCronHelper()">
+                                    <i class="bi bi-question-circle"></i>
+                                </button>
+                            </div>
+                            <small class="form-text text-muted">格式: 分 时 日 月 周 (例: 0 9 * * * 表示每天9点)</small>
+                        </div>
+                    </div>
+                    
+                    <div id="intervalConfig" class="trigger-config" style="display: none;">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">间隔时间</label>
+                                <input type="number" class="form-control" id="intervalTime" name="interval_time" value="60" min="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">时间单位</label>
+                                <select class="form-select" id="intervalUnit" name="interval_unit">
+                                    <option value="seconds">秒</option>
+                                    <option value="minutes">分钟</option>
+                                    <option value="hours">小时</option>
+                                    <option value="days">天</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="randomConfig" class="trigger-config" style="display: none;">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">最小间隔 (分钟)</label>
+                                <input type="number" class="form-control" id="minInterval" name="min_interval" value="30" min="1">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">最大间隔 (分钟)</label>
+                                <input type="number" class="form-control" id="maxInterval" name="max_interval" value="120" min="1">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 执行配置 -->
+                    <h6 class="mb-3"><i class="bi bi-play-circle"></i> 执行配置</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">MAA 配置文件</label>
+                            <input type="text" class="form-control" id="maaConfig" name="maa_config" placeholder="config.json">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">任务参数</label>
+                            <input type="text" class="form-control" id="taskArgs" name="task_args" placeholder="启动 刷理智">
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="taskEnabled" name="enabled" checked>
+                                <label class="form-check-label" for="taskEnabled">启用任务</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="allowConcurrent" name="allow_concurrent">
+                                <label class="form-check-label" for="allowConcurrent">允许并发</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="notifyOnComplete" name="notify_on_complete">
+                                <label class="form-check-label" for="notifyOnComplete">完成时通知</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 高级配置 -->
+                    <div class="accordion mb-3" id="advancedConfig">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="advancedHeading">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
+                                        data-bs-target="#advancedCollapse" aria-expanded="false">
+                                    <i class="bi bi-gear me-2"></i> 高级配置
+                                </button>
+                            </h2>
+                            <div id="advancedCollapse" class="accordion-collapse collapse" data-bs-parent="#advancedConfig">
+                                <div class="accordion-body">
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">超时时间 (秒)</label>
+                                            <input type="number" class="form-control" id="taskTimeout" name="timeout" value="3600" min="60">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">重试次数</label>
+                                            <input type="number" class="form-control" id="retryCount" name="retry_count" value="0" min="0" max="5">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">前置命令</label>
+                                        <textarea class="form-control" id="preCommands" name="pre_commands" rows="2" 
+                                                  placeholder="在任务执行前运行的命令，每行一个"></textarea>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">后置命令</label>
+                                        <textarea class="form-control" id="postCommands" name="post_commands" rows="2" 
+                                                  placeholder="在任务执行后运行的命令，每行一个"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveTask()">保存任务</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cron 表达式帮助模态框 -->
+<div class="modal fade" id="cronHelperModal" tabindex="-1" aria-labelledby="cronHelperModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cronHelperModalLabel">Cron 表达式帮助</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>字段</th>
+                                <th>说明</th>
+                                <th>值域</th>
+                                <th>特殊字符</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>分钟</td>
+                                <td>分钟</td>
+                                <td>0-59</td>
+                                <td>, - * /</td>
+                            </tr>
+                            <tr>
+                                <td>小时</td>
+                                <td>小时</td>
+                                <td>0-23</td>
+                                <td>, - * /</td>
+                            </tr>
+                            <tr>
+                                <td>日期</td>
+                                <td>月份中的日期</td>
+                                <td>1-31</td>
+                                <td>, - * / ? L W</td>
+                            </tr>
+                            <tr>
+                                <td>月份</td>
+                                <td>月份</td>
+                                <td>1-12 或 JAN-DEC</td>
+                                <td>, - * /</td>
+                            </tr>
+                            <tr>
+                                <td>星期</td>
+                                <td>星期几</td>
+                                <td>0-6 或 SUN-SAT</td>
+                                <td>, - * / ? L #</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <h6>常用示例：</h6>
+                <div class="list-group">
+                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 9 * * *')">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">0 9 * * *</h6>
+                        </div>
+                        <p class="mb-1">每天上午9点执行</p>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 */2 * * *')">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">0 */2 * * *</h6>
+                        </div>
+                        <p class="mb-1">每2小时执行一次</p>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 9 * * 1-5')">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">0 9 * * 1-5</h6>
+                        </div>
+                        <p class="mb-1">工作日上午9点执行</p>
+                    </a>
+                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 0 */3 * *')">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">0 0 */3 * *</h6>
+                        </div>
+                        <p class="mb-1">每3天午夜执行</p>
+                    </a>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let tasks = [];
+    let resourceGroups = {};
+    let filteredTasks = [];
+    let currentTaskId = null;
+
+    // 加载任务列表
+    async function loadTasks() {
+        try {
+            tasks = await apiRequest('/api/tasks');
+            filteredTasks = tasks;
+            updateTasksTable();
+        } catch (error) {
+            console.error('加载任务列表失败:', error);
+        }
+    }
+
+    // 加载资源分组
+    async function loadResourceGroups() {
+        try {
+            resourceGroups = await apiRequest('/api/resource-groups');
+            updateResourceGroupSelects();
+        } catch (error) {
+            console.error('加载资源分组失败:', error);
+        }
+    }
+
+    // 更新资源分组选择器
+    function updateResourceGroupSelects() {
+        const selects = document.querySelectorAll('#resource-group-select, #group-filter');
+        selects.forEach(select => {
+            if (select.id === 'group-filter') {
+                select.innerHTML = '<option value="">所有资源分组</option>';
+            } else {
+                select.innerHTML = '';
+            }
+            
+            Object.values(resourceGroups).forEach(group => {
+                const option = document.createElement('option');
+                option.value = group.name;
+                option.textContent = `${group.name} (${group.description})`;
+                select.appendChild(option);
+            });
+        });
+    }
+
+    // 更新任务表格
+    function updateTasksTable() {
+        const tbody = document.getElementById('tasks-table-body');
+        
+        if (filteredTasks.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-muted">暂无任务</td>
+                </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        filteredTasks.forEach(task => {
+            const statusColor = getStatusColor(task.status);
+            const statusText = getStatusText(task.status);
+            const nextRunTime = task.next_run_time ? new Date(task.next_run_time).toLocaleString() : '-';
+
+            html += `
+                <tr>
+                    <td>
+                        <div>
+                            <strong>${task.name}</strong>
+                            ${task.description ? `<br><small class="text-muted">${task.description}</small>` : ''}
+                        </div>
+                    </td>
+                    <td><span class="badge bg-${statusColor}">${statusText}</span></td>
+                    <td><span class="badge bg-secondary">${task.priority}</span></td>
+                    <td><span class="badge bg-info">${task.resource_group}</span></td>
+                    <td>${getTriggerTypeText(task.trigger_type)}</td>
+                    <td><small>${nextRunTime}</small></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="viewTask('${task.id}')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            ${task.status === 'running' 
+                                ? `<button class="btn btn-outline-warning" onclick="cancelTask('${task.id}')">
+                                     <i class="bi bi-stop"></i>
+                                   </button>`
+                                : `<button class="btn btn-outline-success" onclick="runTask('${task.id}')" ${systemStatus.mode !== 'single_task' ? 'disabled' : ''}>
+                                     <i class="bi bi-play"></i>
+                                   </button>`
+                            }
+                            <button class="btn btn-outline-secondary" onclick="editTask('${task.id}')">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteTask('${task.id}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
+    }
+
+    // 获取触发器类型文本
+    function getTriggerTypeText(type) {
+        const types = {
+            'cron': 'Cron定时',
+            'interval': '间隔执行',
+            'random': '随机时间'
+        };
+        return types[type] || type;
+    }
+
+    // 过滤任务
+    function filterTasks() {
+        const search = document.getElementById('task-search').value.toLowerCase();
+        const status = document.getElementById('status-filter').value;
+        const group = document.getElementById('group-filter').value;
+
+        filteredTasks = tasks.filter(task => {
+            let match = true;
+            
+            if (search && !task.name.toLowerCase().includes(search)) {
+                match = false;
+            }
+            
+            if (status && task.status !== status) {
+                match = false;
+            }
+            
+            if (group && task.resource_group !== group) {
+                match = false;
+            }
+            
+            return match;
+        });
+
+        updateTasksTable();
+    }
+
+    // 清除过滤器
+    function clearFilters() {
+        document.getElementById('task-search').value = '';
+        document.getElementById('status-filter').value = '';
+        document.getElementById('group-filter').value = '';
+        filteredTasks = tasks;
+        updateTasksTable();
+    }
+
+    // 查看任务详情
+    async function viewTask(taskId) {
+        try {
+            const taskDetail = await apiRequest(`/api/tasks/${taskId}`);
+            const task = taskDetail.task;
+            const status = taskDetail.status;
+            const result = taskDetail.result;
+
+            currentTaskId = taskId;
+
+            let html = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>基本信息</h6>
+                        <table class="table table-sm">
+                            <tr><th>名称</th><td>${task.name}</td></tr>
+                            <tr><th>描述</th><td>${task.description || '-'}</td></tr>
+                            <tr><th>优先级</th><td>${task.priority}</td></tr>
+                            <tr><th>资源分组</th><td>${task.resource_group}</td></tr>
+                            <tr><th>状态</th><td><span class="badge bg-${getStatusColor(status)}">${getStatusText(status)}</span></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>触发配置</h6>
+                        <table class="table table-sm">
+                            <tr><th>触发类型</th><td>${getTriggerTypeText(task.trigger.trigger_type)}</td></tr>
+            `;
+
+            if (task.trigger.trigger_type === 'cron') {
+                html += `<tr><th>Cron表达式</th><td>${task.trigger.cron_expression || '-'}</td></tr>`;
+            } else if (task.trigger.trigger_type === 'interval') {
+                html += `<tr><th>间隔时间</th><td>${task.trigger.interval_seconds} 秒</td></tr>`;
+            } else if (task.trigger.trigger_type === 'random') {
+                html += `
+                    <tr><th>时间范围</th><td>${task.trigger.random_start_time || '-'} ~ ${task.trigger.random_end_time || '-'}</td></tr>
+                `;
+            }
+
+            html += `
+                        </table>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <h6>执行配置</h6>
+                        <table class="table table-sm">
+                            <tr><th>执行命令</th><td><code>${task.main_command}</code></td></tr>
+                            <tr><th>工作目录</th><td>${task.working_directory || '-'}</td></tr>
+                            <tr><th>模拟器任务</th><td>${task.is_emulator_task ? '是' : '否'}</td></tr>
+            `;
+
+            if (task.is_emulator_task) {
+                html += `
+                    <tr><th>设备ID</th><td>${task.emulator_device_id || '-'}</td></tr>
+                    <tr><th>目标分辨率</th><td>${task.target_resolution || '-'}</td></tr>
+                    <tr><th>启动应用</th><td>${task.startup_app || '-'}</td></tr>
+                `;
+            }
+
+            html += `
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            if (result) {
+                html += `
+                    <div class="row">
+                        <div class="col-12">
+                            <h6>执行结果</h6>
+                            <table class="table table-sm">
+                                <tr><th>开始时间</th><td>${result.start_time ? new Date(result.start_time).toLocaleString() : '-'}</td></tr>
+                                <tr><th>结束时间</th><td>${result.end_time ? new Date(result.end_time).toLocaleString() : '-'}</td></tr>
+                                <tr><th>执行时长</th><td>${result.duration ? result.duration.toFixed(2) + ' 秒' : '-'}</td></tr>
+                                <tr><th>返回码</th><td>${result.return_code}</td></tr>
+                                <tr><th>结果消息</th><td>${result.message || '-'}</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+
+            document.getElementById('task-detail-content').innerHTML = html;
+
+            // 更新按钮状态
+            const runBtn = document.getElementById('run-task-btn');
+            const cancelBtn = document.getElementById('cancel-task-btn');
+
+            if (status === 'running') {
+                runBtn.style.display = 'none';
+                cancelBtn.style.display = 'inline-block';
+            } else if (systemStatus.mode === 'single_task') {
+                runBtn.style.display = 'inline-block';
+                cancelBtn.style.display = 'none';
+            } else {
+                runBtn.style.display = 'none';
+                cancelBtn.style.display = 'none';
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById('taskDetailModal'));
+            modal.show();
+
+        } catch (error) {
+            console.error('加载任务详情失败:', error);
+        }
+    }
+
+    // 执行任务
+    async function runTask(taskId) {
+        if (systemStatus.mode !== 'single_task') {
+            showToast('必须在单任务模式下才能手动执行任务', 'warning');
+            return;
+        }
+
+        try {
+            await apiRequest(`/api/tasks/${taskId}/run`, { method: 'POST' });
+            showToast('任务开始执行', 'success');
+            loadTasks();
+        } catch (error) {
+            console.error('执行任务失败:', error);
+        }
+    }
+
+    // 取消任务
+    async function cancelTask(taskId) {
+        if (confirm('确定要取消这个任务吗？')) {
+            try {
+                await apiRequest(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+                showToast('任务已取消', 'success');
+                loadTasks();
+            } catch (error) {
+                console.error('取消任务失败:', error);
+            }
+        }
+    }
+
+    // 删除任务
+    async function deleteTask(taskId) {
+        if (confirm('确定要删除这个任务吗？此操作不可恢复。')) {
+            try {
+                await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
+                showToast('任务已删除', 'success');
+                loadTasks();
+            } catch (error) {
+                console.error('删除任务失败:', error);
+            }
+        }
+    }
+
+    // 编辑任务
+    function editTask(taskId) {
+        // 从任务列表中找到对应任务并填充表单
+        const task = tasks.find(t => t.id === taskId);
+        if (task) {
+            populateTaskForm(task);
+            document.getElementById('taskModalLabel').textContent = '编辑任务';
+            const modal = new bootstrap.Modal(document.getElementById('taskModal'));
+            modal.show();
+        }
+    }
+
+    // 创建新任务
+    function createTask() {
+        resetTaskForm();
+        document.getElementById('taskModalLabel').textContent = '创建任务';
+        const modal = new bootstrap.Modal(document.getElementById('taskModal'));
+        modal.show();
+    }
+
+    // 重置任务表单
+    function resetTaskForm() {
+        document.getElementById('taskForm').reset();
+        document.getElementById('taskId').value = '';
+        document.getElementById('taskEnabled').checked = true;
+        showTriggerConfig('cron');
+    }
+
+    // 填充任务表单
+    function populateTaskForm(task) {
+        document.getElementById('taskId').value = task.id;
+        document.getElementById('taskName').value = task.name;
+        document.getElementById('taskDescription').value = task.description || '';
+        document.getElementById('taskType').value = task.type || 'maa_task';
+        document.getElementById('triggerType').value = task.trigger_type;
+        document.getElementById('taskPriority').value = task.priority;
+        document.getElementById('resourceGroup').value = task.resource_group || 'default';
+        document.getElementById('taskEnabled').checked = task.enabled;
+        
+        // 根据触发类型显示相应配置
+        showTriggerConfig(task.trigger_type);
+        
+        // 填充触发器配置
+        if (task.trigger_type === 'cron') {
+            document.getElementById('cronExpression').value = task.cron_expression || '';
+        } else if (task.trigger_type === 'interval') {
+            document.getElementById('intervalTime').value = task.interval_time || 60;
+            document.getElementById('intervalUnit').value = task.interval_unit || 'minutes';
+        } else if (task.trigger_type === 'random') {
+            document.getElementById('minInterval').value = task.min_interval || 30;
+            document.getElementById('maxInterval').value = task.max_interval || 120;
+        }
+        
+        // 填充执行配置
+        document.getElementById('maaConfig').value = task.maa_config || '';
+        document.getElementById('taskArgs').value = task.task_args || '';
+        document.getElementById('allowConcurrent').checked = task.allow_concurrent || false;
+        document.getElementById('notifyOnComplete').checked = task.notify_on_complete || false;
+        
+        // 填充高级配置
+        document.getElementById('taskTimeout').value = task.timeout || 3600;
+        document.getElementById('retryCount').value = task.retry_count || 0;
+        document.getElementById('preCommands').value = task.pre_commands ? task.pre_commands.join('\n') : '';
+        document.getElementById('postCommands').value = task.post_commands ? task.post_commands.join('\n') : '';
+    }
+
+    // 显示对应的触发器配置
+    function showTriggerConfig(triggerType) {
+        const configs = document.querySelectorAll('.trigger-config');
+        configs.forEach(config => {
+            config.style.display = 'none';
+        });
+        
+        const targetConfig = document.getElementById(triggerType + 'Config');
+        if (targetConfig) {
+            targetConfig.style.display = 'block';
+        }
+    }
+
+    // 保存任务
+    async function saveTask() {
+        const form = document.getElementById('taskForm');
+        const formData = new FormData(form);
+        const taskData = {};
+        
+        // 转换表单数据
+        for (const [key, value] of formData.entries()) {
+            if (value !== '') {
+                if (key.includes('_') && (key.endsWith('count') || key.endsWith('time') || key.endsWith('interval') || key === 'priority' || key === 'timeout')) {
+                    taskData[key] = parseInt(value);
+                } else if (key === 'enabled' || key === 'allow_concurrent' || key === 'notify_on_complete') {
+                    taskData[key] = true;
+                } else {
+                    taskData[key] = value;
+                }
+            }
+        }
+        
+        // 处理未选中的复选框
+        const checkboxes = ['enabled', 'allow_concurrent', 'notify_on_complete'];
+        checkboxes.forEach(checkbox => {
+            if (!formData.has(checkbox)) {
+                taskData[checkbox] = false;
+            }
+        });
+        
+        // 处理命令列表
+        if (taskData.pre_commands) {
+            taskData.pre_commands = taskData.pre_commands.split('\n').filter(cmd => cmd.trim());
+        }
+        if (taskData.post_commands) {
+            taskData.post_commands = taskData.post_commands.split('\n').filter(cmd => cmd.trim());
+        }
+        
+        try {
+            const taskId = document.getElementById('taskId').value;
+            const url = taskId ? `/api/tasks/${taskId}` : '/api/tasks';
+            const method = taskId ? 'PUT' : 'POST';
+            
+            await apiRequest(url, {
+                method: method,
+                body: JSON.stringify(taskData)
+            });
+            
+            showToast(taskId ? '任务更新成功' : '任务创建成功', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
+            loadTasks();
+        } catch (error) {
+            console.error('保存任务失败:', error);
+        }
+    }
+
+    // 显示 Cron 帮助
+    function showCronHelper() {
+        const modal = new bootstrap.Modal(document.getElementById('cronHelperModal'));
+        modal.show();
+    }
+
+    // 设置 Cron 表达式
+    function setCronExpression(expression) {
+        document.getElementById('cronExpression').value = expression;
+        bootstrap.Modal.getInstance(document.getElementById('cronHelperModal')).hide();
+    }
+
+    // 初始化页面
+    document.addEventListener('DOMContentLoaded', function() {
+        loadTasks();
+        loadResourceGroups();
+
+        // 绑定过滤器事件
+        document.getElementById('task-search').addEventListener('input', filterTasks);
+        document.getElementById('status-filter').addEventListener('change', filterTasks);
+        document.getElementById('group-filter').addEventListener('change', filterTasks);
+
+        // 绑定新任务模态框的触发器类型变化事件
+        document.getElementById('triggerType').addEventListener('change', function() {
+            showTriggerConfig(this.value);
+        });
+
+        // 触发器类型切换
+        document.getElementById('trigger-type-select').addEventListener('change', function() {
+            const triggerType = this.value;
+            document.querySelectorAll('.trigger-config').forEach(el => el.style.display = 'none');
+            document.getElementById(`${triggerType}-config`).style.display = 'block';
+        });
+
+        // 模拟器任务切换
+        document.getElementById('is-emulator-task').addEventListener('change', function() {
+            document.getElementById('emulator-config').style.display = this.checked ? 'block' : 'none';
+        });
+
+        // 任务表单提交
+        document.getElementById('task-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const taskData = {};
+            
+            for (let [key, value] of formData.entries()) {
+                if (key === 'priority' || key === 'interval_seconds') {
+                    taskData[key] = parseInt(value);
+                } else if (key === 'is_emulator_task' || key === 'enable_global_log' || 
+                          key === 'enable_temp_log' || key === 'notify_on_success' || 
+                          key === 'notify_on_failure') {
+                    taskData[key] = true;  // 只有选中的checkbox会被发送
+                } else {
+                    taskData[key] = value;
+                }
+            }
+            
+            // 设置未选中的checkbox为false
+            ['is_emulator_task', 'enable_global_log', 'enable_temp_log', 'notify_on_success', 'notify_on_failure'].forEach(field => {
+                if (!(field in taskData)) {
+                    taskData[field] = false;
+                }
+            });
+
+            try {
+                await apiRequest('/api/tasks', {
+                    method: 'POST',
+                    body: JSON.stringify(taskData)
+                });
+                
+                showToast('任务创建成功', 'success');
+                
+                // 关闭模态框并重置表单
+                bootstrap.Modal.getInstance(document.getElementById('createTaskModal')).hide();
+                this.reset();
+                
+                loadTasks();
+                
+            } catch (error) {
+                console.error('创建任务失败:', error);
+            }
+        });
+
+        // 任务详情按钮事件
+        document.getElementById('run-task-btn').addEventListener('click', function() {
+            if (currentTaskId) {
+                runTask(currentTaskId);
+                bootstrap.Modal.getInstance(document.getElementById('taskDetailModal')).hide();
+            }
+        });
+
+        document.getElementById('cancel-task-btn').addEventListener('click', function() {
+            if (currentTaskId) {
+                cancelTask(currentTaskId);
+                bootstrap.Modal.getInstance(document.getElementById('taskDetailModal')).hide();
+            }
+        });
+
+        // 定时刷新
+        setInterval(loadTasks, 10000);
+    });
+</script>
+{% endblock %}

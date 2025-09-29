@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}仪表板 - MAA 任务调度器{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="bi bi-speedometer2"></i> 仪表板</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="total-tasks">0</h4>
+                        <p class="card-text">总任务数</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-list-task" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="running-tasks">0</h4>
+                        <p class="card-text">运行中任务</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-play-circle" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="queued-tasks">0</h4>
+                        <p class="card-text">队列中任务</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-clock" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title" id="scheduled-jobs">0</h4>
+                        <p class="card-text">定时任务</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-calendar-event" style="font-size: 2rem;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 资源分组状态 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-diagram-3"></i> 资源分组状态</h5>
+            </div>
+            <div class="card-body">
+                <div id="resource-groups" class="row">
+                    <!-- 资源分组将动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 最近任务 -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="bi bi-activity"></i> 正在运行的任务</h5>
+                <span class="badge bg-primary" id="running-count">0</span>
+            </div>
+            <div class="card-body">
+                <div id="running-tasks-list">
+                    <p class="text-muted text-center">暂无运行中的任务</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-clock-history"></i> 最近完成的任务</h5>
+            </div>
+            <div class="card-body">
+                <div id="recent-tasks-list">
+                    <p class="text-muted text-center">暂无完成的任务</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let tasks = [];
+    let resourceGroups = {};
+
+    // 加载任务列表
+    async function loadTasks() {
+        try {
+            tasks = await apiRequest('/api/tasks');
+            updateTaskStatistics();
+            updateRunningTasksList();
+        } catch (error) {
+            console.error('加载任务列表失败:', error);
+        }
+    }
+
+    // 加载资源分组
+    async function loadResourceGroups() {
+        try {
+            resourceGroups = await apiRequest('/api/resource-groups');
+            updateResourceGroupsDisplay();
+        } catch (error) {
+            console.error('加载资源分组失败:', error);
+        }
+    }
+
+    // 更新任务统计
+    function updateTaskStatistics() {
+        const totalTasks = tasks.length;
+        const runningTasks = tasks.filter(task => task.status === 'running').length;
+        const queuedTasks = systemStatus.queue_size || 0;
+        const scheduledJobs = systemStatus.scheduled_jobs || 0;
+
+        document.getElementById('total-tasks').textContent = totalTasks;
+        document.getElementById('running-tasks').textContent = runningTasks;
+        document.getElementById('queued-tasks').textContent = queuedTasks;
+        document.getElementById('scheduled-jobs').textContent = scheduledJobs;
+    }
+
+    // 更新资源分组显示
+    function updateResourceGroupsDisplay() {
+        const container = document.getElementById('resource-groups');
+        container.innerHTML = '';
+
+        Object.values(resourceGroups).forEach(group => {
+            const progressPercentage = (group.running_count / group.max_concurrent) * 100;
+            const progressColor = progressPercentage < 50 ? 'success' : progressPercentage < 80 ? 'warning' : 'danger';
+
+            const groupHtml = `
+                <div class="col-md-4 mb-3">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">${group.name}</h6>
+                            <p class="card-text text-muted">${group.description}</p>
+                            <div class="progress mb-2">
+                                <div class="progress-bar bg-${progressColor}" role="progressbar" 
+                                     style="width: ${progressPercentage}%" 
+                                     aria-valuenow="${group.running_count}" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="${group.max_concurrent}">
+                                </div>
+                            </div>
+                            <small class="text-muted">
+                                ${group.running_count} / ${group.max_concurrent} 正在使用
+                                (可用: ${group.available})
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML += groupHtml;
+        });
+    }
+
+    // 更新正在运行的任务列表
+    function updateRunningTasksList() {
+        const container = document.getElementById('running-tasks-list');
+        const runningTasks = tasks.filter(task => task.status === 'running');
+
+        document.getElementById('running-count').textContent = runningTasks.length;
+
+        if (runningTasks.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center">暂无运行中的任务</p>';
+            return;
+        }
+
+        let html = '';
+        runningTasks.forEach(task => {
+            html += `
+                <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                    <div>
+                        <strong>${task.name}</strong>
+                        <br>
+                        <small class="text-muted">${task.resource_group}</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-success">运行中</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    // 获取状态颜色
+    function getStatusColor(status) {
+        const colors = {
+            'pending': 'secondary',
+            'running': 'success',
+            'completed': 'primary',
+            'failed': 'danger',
+            'cancelled': 'warning'
+        };
+        return colors[status] || 'secondary';
+    }
+
+    // 获取状态文本
+    function getStatusText(status) {
+        const texts = {
+            'pending': '待执行',
+            'running': '执行中',
+            'completed': '已完成',
+            'failed': '失败',
+            'cancelled': '已取消'
+        };
+        return texts[status] || status;
+    }
+
+    // 初始化页面
+    document.addEventListener('DOMContentLoaded', function() {
+        loadTasks();
+        loadResourceGroups();
+
+        // 定时刷新数据
+        setInterval(() => {
+            loadTasks();
+            loadResourceGroups();
+        }, 10000); // 每10秒刷新一次
+    });
+</script>
+{% endblock %}
