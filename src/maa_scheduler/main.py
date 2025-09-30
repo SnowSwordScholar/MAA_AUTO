@@ -24,10 +24,10 @@ from src.maa_scheduler.notification import notification_service
 # 设置日志
 def setup_logging():
     """设置日志系统"""
-    config = config_manager.load_app_config()
+    config = config_manager.load_config()
     
     # 创建日志目录
-    log_file_path = Path(config.log_file)
+    log_file_path = Path(config.logging.file)
     log_file_path.parent.mkdir(parents=True, exist_ok=True)
     
     # 配置日志格式
@@ -35,10 +35,10 @@ def setup_logging():
     
     # 配置根日志器
     logging.basicConfig(
-        level=getattr(logging, config.log_level.upper()),
+        level=getattr(logging, config.logging.level.upper()),
         format=log_format,
         handlers=[
-            logging.FileHandler(config.log_file, encoding='utf-8'),
+            logging.FileHandler(config.logging.file, encoding='utf-8'),
             logging.StreamHandler(sys.stdout)
         ]
     )
@@ -55,7 +55,7 @@ class SchedulerApplication:
     """调度器应用主类"""
     
     def __init__(self):
-        self.config = config_manager.load_app_config()
+        self.config = config_manager.get_config()
         self._shutdown_event = asyncio.Event()
     
     async def start_scheduler_only(self):
@@ -67,10 +67,11 @@ class SchedulerApplication:
             await scheduler.start()
             
             # 发送启动通知
-            await notification_service.notify_scheduler_status(
-                "已启动", 
-                "MAA任务调度器已启动（仅调度器模式）"
-            )
+            if self.config.app.notification.notify_on_startup:
+                await notification_service.notify_scheduler_status(
+                    "已启动", 
+                    "MAA任务调度器已启动（仅调度器模式）"
+                )
             
             logger.info("调度器启动完成，按 Ctrl+C 停止")
             
@@ -87,8 +88,8 @@ class SchedulerApplication:
     
     async def start_web_only(self, host: str = None, port: int = None):
         """仅启动Web界面（无调度器）"""
-        host = host or self.config.web_host
-        port = port or self.config.web_port
+        host = host or self.config.web.host
+        port = port or self.config.web.port
         
         logger.info(f"启动MAA任务调度器Web界面: http://{host}:{port}")
         
@@ -98,7 +99,7 @@ class SchedulerApplication:
                 app=app,
                 host=host,
                 port=port,
-                log_level=self.config.log_level.lower(),
+                log_level=self.config.logging.level.lower(),
                 access_log=True
             )
             
@@ -113,8 +114,8 @@ class SchedulerApplication:
     
     async def start_full(self, host: str = None, port: int = None):
         """启动完整服务（调度器 + Web界面）"""
-        host = host or self.config.web_host
-        port = port or self.config.web_port
+        host = host or self.config.web.host
+        port = port or self.config.web.port
         
         logger.info(f"启动MAA任务调度器完整服务: http://{host}:{port}")
         
@@ -123,21 +124,22 @@ class SchedulerApplication:
             await scheduler.start()
             
             # 发送启动通知
-            await notification_service.notify_scheduler_status(
-                "已启动",
-                f"MAA任务调度器已启动\nWeb界面: http://{host}:{port}"
-            )
+            if self.config.app.notification.notify_on_startup:
+                await notification_service.notify_scheduler_status(
+                    "已启动",
+                    f"MAA任务调度器已启动\nWeb界面: http://{host}:{port}"
+                )
             
             # 配置uvicorn
-            config = uvicorn.Config(
+            uvicorn_config = uvicorn.Config(
                 app=app,
                 host=host,
                 port=port,
-                log_level=self.config.log_level.lower(),
+                log_level=self.config.logging.level.lower(),
                 access_log=True
             )
             
-            server = uvicorn.Server(config)
+            server = uvicorn.Server(uvicorn_config)
             
             # 启动Web服务
             await server.serve()
@@ -159,10 +161,11 @@ class SchedulerApplication:
             await scheduler.stop()
             
             # 发送停止通知
-            await notification_service.notify_scheduler_status(
-                "已停止",
-                "MAA任务调度器已停止"
-            )
+            if self.config.app.notification.notify_on_shutdown:
+                await notification_service.notify_scheduler_status(
+                    "已停止",
+                    "MAA任务调度器已停止"
+                )
             
             logger.info("调度器已安全关闭")
             
@@ -183,32 +186,33 @@ async def check_config():
     print("=== MAA 任务调度器配置检查 ===\n")
     
     # 检查基础配置
-    config = config_manager.load_app_config()
-    print(f"应用名称: {config.app_name}")
-    print(f"版本: {config.version}")
-    print(f"调试模式: {config.debug}")
-    print(f"Web服务: {config.web_host}:{config.web_port}")
-    print(f"最大工作线程: {config.max_workers}")
-    print(f"任务超时: {config.task_timeout}秒")
-    print(f"日志级别: {config.log_level}")
-    print(f"日志文件: {config.log_file}")
+    config = config_manager.get_config()
+    print(f"调度模式: {config.app.mode}")
+    print(f"任务超时: {config.app.task_timeout}秒")
+    print(f"Web服务: {config.web.host}:{config.web.port}")
+    print(f"调试模式: {config.web.debug}")
+    print(f"日志级别: {config.logging.level}")
+    print(f"日志文件: {config.logging.file}")
     
     # 检查Webhook配置
     if config.webhook:
         print(f"\nWebhook配置:")
         print(f"  UID: {config.webhook.uid}")
-        print(f"  令牌: {config.webhook.token[:10]}...")
+        print(f"  令牌: {config.webhook.token[:4]}... (已隐藏)")
         print(f"  URL: {config.webhook.base_url}")
     else:
-        print("\n⚠️  警告: 未配置Webhook通知")
+        print("\n⚠️  警告: 未配置Webhook通知 (环境变量 WEBHOOK_UID, WEBHOOK_TOKEN, WEBHOOK_BASE_URL 未设置)")
     
     # 检查资源分组
     print(f"\n资源分组配置:")
-    for group in config.resource_groups:
-        print(f"  - {group.name}: {group.description} (最大并发: {group.max_concurrent})")
-    
+    if config.resource_groups:
+        for group in config.resource_groups:
+            print(f"  - {group.name}: {group.description} (最大并发: {group.max_concurrent})")
+    else:
+        print("  未配置资源分组。")
+
     # 检查任务配置
-    tasks = config_manager.load_tasks_config()
+    tasks = config.tasks
     print(f"\n任务配置:")
     print(f"  总任务数: {len(tasks)}")
     enabled_tasks = [task for task in tasks if task.enabled]
@@ -226,7 +230,7 @@ async def list_tasks():
     """列出所有任务"""
     print("=== 任务列表 ===\n")
     
-    tasks = config_manager.load_tasks_config()
+    tasks = config_manager.get_config().tasks
     
     if not tasks:
         print("暂无任务")
@@ -250,12 +254,15 @@ async def test_notification():
     print("正在发送测试通知...")
     
     try:
-        await notification_service.send_webhook_notification(
+        success = await notification_service.send_webhook_notification(
             "MAA调度器测试",
-            f"这是一条测试通知，发送时间: {asyncio.get_event_loop().time()}",
-            "测试"
+            f"这是一条测试通知，发送时间: {datetime.now().isoformat()}",
+            "test"
         )
-        print("✓ 测试通知发送成功")
+        if success:
+            print("✓ 测试通知发送成功")
+        else:
+            print("✗ 测试通知发送失败，请检查配置和网络。")
     except Exception as e:
         print(f"✗ 测试通知发送失败: {e}")
 

@@ -1,66 +1,50 @@
-# 测试任务配置 - 使用新的配置模型
-
 - id: "test-console-task"
   name: "控制台测试任务"
   description: "简单的控制台命令测试"
   enabled: true
   priority: 5
-  resource_group: "general"
-  task_type: "console"
+  resource_group: "default"
+  main_command: "echo '控制台任务执行成功' && date"
+  enable_adb_wakeup: false
+  enable_global_log: true
+  enable_temp_log: true
   trigger:
     trigger_type: "interval"
     interval_minutes: 5
-  execution:
-    command: "echo '控制台任务执行成功' && date"
   post_task:
-    log_config:
-      enable_global_log: true
-      enable_temp_log: true
-    notifications:
-      notify_on_success: true
-      notify_on_failure: true
-      success_notification:
-        title: "任务成功"
-        tag: "success"
-        content: "控制台任务 {task_name} 执行成功"
-      failure_notification:
-        title: "任务失败"  
-        tag: "error"
-        content: "控制台任务 {task_name} 执行失败"
-    keyword_monitoring:
-      enabled: false
+    log_keywords: []
+    push_notification:
+      enabled: true
+      on_success: true
+      on_failure: true
+      title: "任务 {task_name} {status}" # 自定义标题示例
+      content: "任务 {task_name} 执行{status}了。" # 自定义内容示例
 
 - id: "test-maa-task"
   name: "MAA测试任务"
   description: "MAA任务示例，带ADB唤醒功能"
-  enabled: false
+  enabled: true
   priority: 3
   resource_group: "camera"
-  task_type: "maa"
+  main_command: "echo '模拟 MAA 任务执行' && sleep 5 && echo '任务完成, 但有一个error' && echo '任务真的完成了'"
+  enable_adb_wakeup: true
+  adb_device_id: "127.0.0.1:5555"
+  enable_global_log: true
+  enable_temp_log: true
   trigger:
-    trigger_type: "scheduled"
-    start_time: "09:00"
-    end_time: "18:00"
-    cron_expression: "0 9 * * *"
-  execution:
-    command: "echo '模拟 MAA 任务执行' && sleep 5 && echo '任务完成'"
-    enable_adb_wakeup: true
-    adb_device_id: "127.0.0.1:5555"
+    trigger_type: "random_time"
+    random_start_time: "09:00"
+    random_end_time: "18:00"
   post_task:
-    log_config:
-      enable_global_log: true
-      enable_temp_log: true
-    notifications:
-      notify_on_success: false
-      notify_on_failure: true
-      failure_notification:
-        title: "MAA任务失败"
-        tag: "maa_error"
-        content: "MAA任务 {task_name} 执行失败，请检查设备状态"
-    keyword_monitoring:
+    log_keywords: ["error", "failed", "timeout"]
+    keyword_notification:
+      title: "MAA任务异常"
+      tag: "maa_warning"
+      content: "MAA任务 {task_name} 检测到关键词: {keywords}"
+    push_notification:
       enabled: true
-      keywords: ["error", "failed", "timeout"]
-      notification:
-        title: "MAA任务异常"
-        tag: "maa_warning" 
-        content: "MAA任务 {task_name} 检测到关键词: {matched_keywords}"
+      on_success: false # 成功时不发送通用通知
+      on_failure: true
+      title: "MAA任务执行失败"
+      tag: "maa_error"
+      content: "MAA任务 {task_name} 执行失败，请检查设备状态"

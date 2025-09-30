@@ -14,188 +14,180 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
+class NotificationConfig(BaseModel):
+    """通知开关配置"""
+    notify_on_startup: bool = Field(default=False, description="启动时通知")
+    notify_on_shutdown: bool = Field(default=False, description="关闭时通知")
+
+class AppSettings(BaseModel):
+    """应用设置"""
+    mode: Literal["scheduler", "single_task"] = Field(default="scheduler", description="调度器模式")
+    task_timeout: int = Field(default=3600, description="任务超时时间(秒)")
+    notification: NotificationConfig = Field(default_factory=NotificationConfig, description="通知设置")
+
+class WebSettings(BaseModel):
+    """Web界面配置"""
+    host: str = Field(default="127.0.0.1", description="Web服务主机")
+    port: int = Field(default=8080, description="Web服务端口")
+    debug: bool = Field(default=False, description="调试模式")
+
+class LoggingSettings(BaseModel):
+    """日志配置"""
+    level: str = Field(default="INFO", description="日志级别")
+    file: str = Field(default="logs/maa_scheduler.log", description="日志文件路径")
+    max_size: str = Field(default="10MB", description="日志文件最大大小")
+    backup_count: int = Field(default=5, description="日志备份数量")
+
 class WebhookConfig(BaseModel):
-    """Webhook 推送配置"""
-    uid: str = Field(..., description="推送 UID")
-    token: str = Field(..., description="推送令牌")
-    base_url: str = Field(..., description="推送基础 URL")
+    """Webhook 配置"""
+    uid: str
+    token: str
+    base_url: str
 
 class ResourceGroup(BaseModel):
     """资源分组配置"""
     name: str = Field(..., description="分组名称")
     description: str = Field(default="", description="分组描述")
     max_concurrent: int = Field(default=1, description="最大并发任务数")
-    resources: List[str] = Field(default_factory=list, description="资源列表")
-
-class NotificationConfig(BaseModel):
-    """通知配置"""
-    title: str = "MAA调度器通知"
-    tag: str = "maa-scheduler" 
-    content: str = "任务状态更新"
-
-class LogConfig(BaseModel):
-    """日志配置"""
-    enable_global_log: bool = True
-    enable_temp_log: bool = False
-
-class NotificationsConfig(BaseModel):
-    """通知配置组"""
-    notify_on_success: bool = False
-    notify_on_failure: bool = True
-    success_notification: Optional[NotificationConfig] = None
-    failure_notification: Optional[NotificationConfig] = None
-
-class KeywordMonitoring(BaseModel):
-    """关键词监控配置"""
-    enabled: bool = False
-    keywords: List[str] = Field(default_factory=list)
-    notification: Optional[NotificationConfig] = None
-
-class PostTaskConfig(BaseModel):
-    """后置任务配置"""
-    log_config: LogConfig = Field(default_factory=LogConfig)
-    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig) 
-    keyword_monitoring: KeywordMonitoring = Field(default_factory=KeywordMonitoring)
-
-class ExecutionConfig(BaseModel):
-    """执行配置"""
-    command: str
-    enable_adb_wakeup: bool = False
-    adb_device_id: Optional[str] = None
 
 class TriggerConfig(BaseModel):
     """触发器配置"""
-    trigger_type: Literal["scheduled", "interval", "random_time"]
+    trigger_type: Literal["scheduled", "interval", "random_time"] = Field(..., description="触发器类型")
     
-    # 定时执行：支持在用户设定的固定时间段内执行任务（例如，每天 9:00-18:00）
-    start_time: Optional[str] = None  # 开始时间，如 "09:00"
-    end_time: Optional[str] = None    # 结束时间，如 "18:00"
-    cron_expression: Optional[str] = None  # 精确定时使用cron表达式
+    # 定时执行 (scheduled)
+    start_time: Optional[str] = Field(default=None, description="开始时间, 格式 HH:MM")
+    end_time: Optional[str] = Field(default=None, description="结束时间, 格式 HH:MM")
     
-    # 间隔执行：基于上次执行完成时间，在设定的间隔后再次执行（例如，每 2 小时执行一次）
-    interval_minutes: Optional[int] = None  # 间隔分钟数
+    # 间隔执行 (interval)
+    interval_minutes: Optional[int] = Field(default=None, description="间隔分钟数")
     
-    # 随机时间执行：在用户设定的时间段内（如 10:00-12:00），随机选择一个时间点执行
-    random_start_time: Optional[str] = None  # 随机开始时间，如 "10:00"
-    random_end_time: Optional[str] = None    # 随机结束时间，如 "12:00"
-    random_distribution: Literal["uniform", "normal"] = "uniform"
+    # 随机时间执行 (random_time)
+    random_start_time: Optional[str] = Field(default=None, description="随机开始时间, 格式 HH:MM")
+    random_end_time: Optional[str] = Field(default=None, description="随机结束时间, 格式 HH:MM")
+
+class KeywordNotificationConfig(BaseModel):
+    """关键词匹配通知配置"""
+    title: str = Field(default="关键词匹配通知", description="通知标题")
+    tag: str = Field(default="keyword-match", description="通知Tag")
+    content: str = Field(default="在任务日志中匹配到关键词: {keywords}", description="通知内容模板")
+
+class PostTaskAction(BaseModel):
+    """后置任务动作"""
+    enabled: bool = Field(default=False, description="是否启用")
+    on_success: bool = Field(default=True, description="成功时触发")
+    on_failure: bool = Field(default=True, description="失败时触发")
+    title: Optional[str] = Field(default=None, description="自定义通知标题")
+    tag: Optional[str] = Field(default=None, description="自定义通知Tag")
+    content: Optional[str] = Field(default=None, description="自定义通知内容")
+
+class PostTaskConfig(BaseModel):
+    """后置任务配置"""
+    log_keywords: List[str] = Field(default_factory=list, description="要监控的日志关键词")
+    keyword_notification: Optional[KeywordNotificationConfig] = Field(default=None, description="关键词匹配通知配置")
+    push_notification: PostTaskAction = Field(default_factory=PostTaskAction, description="推送通知动作")
 
 class TaskConfig(BaseModel):
     """任务配置"""
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    description: str = ""
-    enabled: bool = True
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="任务唯一ID")
+    name: str = Field(..., description="任务名称")
+    description: str = Field(default="", description="任务描述")
+    enabled: bool = Field(default=True, description="是否启用")
     
-    # 优先级和资源配置
-    priority: int = Field(default=5, ge=1, le=10)
-    resource_group: str = "default"
+    priority: int = Field(default=5, ge=1, le=10, description="任务优先级 (1-10)")
+    resource_group: str = Field(default="default", description="所属资源组")
     
-    # 任务类型：控制台任务 或 MAA任务
-    task_type: Literal["console", "maa"] = "console"
+    main_command: str = Field(..., description="要执行的主命令")
     
-    # 触发器配置
-    trigger: TriggerConfig
+    # 前置任务
+    enable_adb_wakeup: bool = Field(default=False, description="是否启用ADB唤醒屏幕")
+    adb_device_id: Optional[str] = Field(default=None, description="ADB设备ID")
     
-    # 执行配置
-    execution: Optional[ExecutionConfig] = None
+    # 日志选项
+    enable_global_log: bool = Field(default=True, description="是否输出到全局日志")
+    enable_temp_log: bool = Field(default=False, description="是否记录到临时日志")
     
-    # 后置任务配置
-    post_task: PostTaskConfig = Field(default_factory=PostTaskConfig)
-    
-    # === 兼容字段（向后兼容旧配置） ===
-    # 执行配置：直接为命令（支持复杂的MAA命令）
-    main_command: Optional[str] = None
-    working_directory: Optional[str] = None
-    environment_variables: Dict[str, str] = Field(default_factory=dict)
-    
-    # 前置任务配置（针对MAA任务）
-    enable_adb_wakeup: bool = False  # MAA任务是否启用ADB唤醒屏幕
-    emulator_device_id: Optional[str] = None
-    target_resolution: Optional[str] = None
-    startup_app: Optional[str] = None
-    
-    # 日志配置
-    enable_global_log: bool = True
-    enable_temp_log: bool = False  # 临时日志选项
-    temp_log_path: Optional[str] = None
-    
-    # 其他兼容字段（向后兼容旧配置）
-    is_emulator_task: Optional[bool] = None
-    pre_commands: List[str] = Field(default_factory=list)
-    notify_on_success: bool = False
-    notify_on_failure: bool = True
-    success_message: str = ""
-    failure_message: str = ""
-    keyword_notification: bool = False
-    keyword_message: str = ""
-    log_keywords: List[str] = Field(default_factory=list)
-    
-    def get_execution_command(self) -> str:
-        """获取执行命令（兼容新旧配置）"""
-        if self.execution:
-            return self.execution.command
-        return self.main_command or ""
-    
-    def get_adb_wakeup_enabled(self) -> bool:
-        """获取ADB唤醒是否启用（兼容新旧配置）"""
-        if self.execution:
-            return self.execution.enable_adb_wakeup
-        return self.enable_adb_wakeup
-    
-    def get_adb_device_id(self) -> Optional[str]:
-        """获取ADB设备ID（兼容新旧配置）"""
-        if self.execution:
-            return self.execution.adb_device_id
-        return self.emulator_device_id
+    trigger: TriggerConfig = Field(..., description="触发器配置")
+    post_task: PostTaskConfig = Field(default_factory=PostTaskConfig, description="后置任务配置")
 
 class AppConfig(BaseModel):
-    """应用配置"""
-    # 基础配置
-    app_name: str = Field(default="MAA Scheduler", description="应用名称")
-    version: str = Field(default="0.1.0", description="版本号")
-    debug: bool = Field(default=False, description="调试模式")
-    
-    # Web 配置
-    web_host: str = Field(default="127.0.0.1", description="Web 服务主机")
-    web_port: int = Field(default=8080, description="Web 服务端口")
-    
-    # 调度器配置
-    scheduler_enabled: bool = Field(default=True, description="调度器是否启用")
-    max_workers: int = Field(default=4, description="最大工作线程数")
-    task_timeout: int = Field(default=3600, description="任务超时时间(秒)")
-    
-    # 日志配置
-    log_level: str = Field(default="INFO", description="日志级别")
-    log_file: str = Field(default="logs/maa_scheduler.log", description="日志文件路径")
-    log_max_size: str = Field(default="10MB", description="日志文件最大大小")
-    log_backup_count: int = Field(default=5, description="日志备份数量")
-    
-    # Webhook 配置
-    webhook: Optional[WebhookConfig] = None
-    
-    # 资源分组
+    """根配置模型"""
+    app: AppSettings = Field(default_factory=AppSettings)
+    web: WebSettings = Field(default_factory=WebSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
     resource_groups: List[ResourceGroup] = Field(default_factory=list)
-    
-    # 任务配置
     tasks: List[TaskConfig] = Field(default_factory=list)
+    
+    webhook: Optional[WebhookConfig] = None
 
 class ConfigManager:
     """配置管理器"""
     
-    def __init__(self, config_dir: Path = None):
-        if config_dir is None:
-            config_dir = Path.cwd() / "config"
+    def __init__(self, config_path: Path = None, tasks_path: Path = None):
+        if config_path is None:
+            config_path = Path.cwd() / "config" / "config.yaml"
+        if tasks_path is None:
+            tasks_path = Path.cwd() / "config" / "tasks.yaml"
         
-        self.config_dir = config_dir
-        self.config_dir.mkdir(exist_ok=True)
+        self.config_path = config_path
+        self.tasks_path = tasks_path
         
-        self.app_config_file = self.config_dir / "app.yaml"
-        self.tasks_config_file = self.config_dir / "tasks.yaml"
+        self.config_path.parent.mkdir(exist_ok=True)
         
-        self._app_config: Optional[AppConfig] = None
-    
-    def load_webhook_config(self) -> Optional[WebhookConfig]:
+        self._config: Optional[AppConfig] = None
+
+    def load_config(self) -> AppConfig:
+        """加载主配置和任务配置"""
+        if self._config:
+            return self._config
+
+        config_data = {}
+        if self.config_path.exists():
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f) or {}
+
+        tasks_data = []
+        if self.tasks_path.exists():
+            with open(self.tasks_path, 'r', encoding='utf-8') as f:
+                tasks_config = yaml.safe_load(f) or {}
+        
+        # 如果 tasks.yaml 的根就是一个列表，将其包装在 'tasks' 键下
+        if isinstance(tasks_config, list):
+            tasks_data = {"tasks": tasks_config}
+        else:
+            tasks_data = tasks_config
+        
+        # 合并配置
+        config_data.update(tasks_data)
+
+        # 加载 Webhook 配置
+        webhook_config = self._load_webhook_from_env()
+        if webhook_config:
+            config_data["webhook"] = webhook_config.dict()
+
+        self._config = AppConfig(**config_data)
+        return self._config
+
+    def save_config(self, config: AppConfig):
+        """保存主配置和任务配置"""
+        self._config = config
+        
+        # 分离主配置和任务配置
+        main_config_dict = config.dict(exclude={'tasks', 'webhook'}, exclude_none=True)
+        tasks_dict = {"tasks": [task.dict(exclude_none=True) for task in config.tasks]}
+
+        # 保存主配置文件
+        with open(self.config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(main_config_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            
+        # 保存任务配置文件
+        with open(self.tasks_path, 'w', encoding='utf-8') as f:
+            yaml.dump(tasks_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    def get_config(self) -> AppConfig:
+        """获取当前加载的配置"""
+        return self.load_config()
+
+    def _load_webhook_from_env(self) -> Optional[WebhookConfig]:
         """从环境变量加载 Webhook 配置"""
         uid = os.getenv("WEBHOOK_UID")
         token = os.getenv("WEBHOOK_TOKEN")
@@ -204,128 +196,41 @@ class ConfigManager:
         if uid and token and base_url:
             return WebhookConfig(uid=uid, token=token, base_url=base_url)
         return None
-    
-    def load_app_config(self) -> AppConfig:
-        """加载应用配置"""
-        if self._app_config is not None:
-            return self._app_config
-        
-        config_data = {}
-        if self.app_config_file.exists():
-            with open(self.app_config_file, 'r', encoding='utf-8') as f:
-                config_data = yaml.safe_load(f) or {}
-        
-        # 添加 Webhook 配置
-        webhook_config = self.load_webhook_config()
-        if webhook_config:
-            config_data["webhook"] = webhook_config.dict()
-        
-        # 创建默认资源分组
-        if "resource_groups" not in config_data:
-            config_data["resource_groups"] = [
-                {
-                    "name": "camera",
-                    "description": "摄像头资源组",
-                    "max_concurrent": 1,
-                    "resources": ["camera", "adb"]
-                },
-                {
-                    "name": "gpu",
-                    "description": "GPU 资源组",
-                    "max_concurrent": 1,
-                    "resources": ["gpu", "cuda"]
-                },
-                {
-                    "name": "general",
-                    "description": "通用资源组",
-                    "max_concurrent": 2,
-                    "resources": []
-                }
-            ]
-        
-        self._app_config = AppConfig(**config_data)
-        return self._app_config
-    
-    def save_app_config(self, config: AppConfig = None):
-        """保存应用配置"""
-        if config is None:
-            config = self._app_config
-        
-        if config is None:
-            return
-        
-        # 移除 webhook 配置（因为它来自环境变量）
-        config_dict = config.dict()
-        if "webhook" in config_dict:
-            del config_dict["webhook"]
-        
-        with open(self.app_config_file, 'w', encoding='utf-8') as f:
-            yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
-        
-        self._app_config = config
-    
-    def load_tasks_config(self) -> List[TaskConfig]:
-        """加载任务配置"""
-        if not self.tasks_config_file.exists():
-            return []
-        
-        with open(self.tasks_config_file, 'r', encoding='utf-8') as f:
-            tasks_data = yaml.safe_load(f) or []
-        
-        return [TaskConfig(**task_data) for task_data in tasks_data]
-    
-    def save_tasks_config(self, tasks: List[TaskConfig]):
-        """保存任务配置"""
-        tasks_data = [task.dict() for task in tasks]
-        
-        with open(self.tasks_config_file, 'w', encoding='utf-8') as f:
-            yaml.dump(tasks_data, f, default_flow_style=False, allow_unicode=True)
-    
-    def get_resource_group(self, name: str) -> Optional[ResourceGroup]:
-        """获取资源分组"""
-        config = self.load_app_config()
-        for group in config.resource_groups:
-            if group.name == name:
-                return group
-        return None
-    
-    def add_task(self, task: TaskConfig):
-        """添加任务"""
-        tasks = self.load_tasks_config()
-        
-        # 检查 ID 是否已存在
-        for existing_task in tasks:
-            if existing_task.id == task.id:
-                raise ValueError(f"任务 ID '{task.id}' 已存在")
-        
-        tasks.append(task)
-        self.save_tasks_config(tasks)
-    
-    def update_task(self, task: TaskConfig):
-        """更新任务"""
-        tasks = self.load_tasks_config()
-        
-        for i, existing_task in enumerate(tasks):
-            if existing_task.id == task.id:
-                tasks[i] = task
-                self.save_tasks_config(tasks)
-                return
-        
-        raise ValueError(f"任务 ID '{task.id}' 不存在")
-    
-    def delete_task(self, task_id: str):
-        """删除任务"""
-        tasks = self.load_tasks_config()
-        tasks = [task for task in tasks if task.id != task_id]
-        self.save_tasks_config(tasks)
-    
+
     def get_task(self, task_id: str) -> Optional[TaskConfig]:
-        """获取任务"""
-        tasks = self.load_tasks_config()
-        for task in tasks:
+        """通过ID获取任务"""
+        config = self.get_config()
+        for task in config.tasks:
             if task.id == task_id:
                 return task
         return None
+
+    def add_task(self, task: TaskConfig):
+        """添加一个新任务"""
+        config = self.get_config()
+        if any(t.id == task.id for t in config.tasks):
+            raise ValueError(f"任务 ID '{task.id}' 已存在")
+        config.tasks.append(task)
+        self.save_config(config)
+
+    def update_task(self, updated_task: TaskConfig):
+        """更新一个现有任务"""
+        config = self.get_config()
+        for i, task in enumerate(config.tasks):
+            if task.id == updated_task.id:
+                config.tasks[i] = updated_task
+                self.save_config(config)
+                return
+        raise ValueError(f"任务 ID '{updated_task.id}' 不存在")
+
+    def delete_task(self, task_id: str):
+        """删除一个任务"""
+        config = self.get_config()
+        initial_len = len(config.tasks)
+        config.tasks = [t for t in config.tasks if t.id != task_id]
+        if len(config.tasks) == initial_len:
+            raise ValueError(f"任务 ID '{task_id}' 不存在")
+        self.save_config(config)
 
 # 全局配置管理器实例
 config_manager = ConfigManager()
