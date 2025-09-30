@@ -1,25 +1,22 @@
 app:
   mode: scheduler
+  task_timeout: 3600
   notification:
-    notify_on_shutdown: false
     notify_on_startup: false
-  task_timeout: 3600
-logging:
-  backup_count: 5
-  file: logs/maa_scheduler.log
-  level: INFO
-  max_size: 10MB
-resource_groups:
-- description: 默认资源组
-  max_concurrent: 1
-  name: default
-- description: 摄像头/模拟器相关任务
-  max_concurrent: 1
-  name: camera
-scheduler:
-  max_workers: 4
-  task_timeout: 3600
+    notify_on_shutdown: false
 web:
-  debug: false
-  host: 127.0.0.1
+  host: 0.0.0.0
   port: 8080
+  debug: false
+logging:
+  level: INFO
+  file: logs/maa_scheduler.log
+  max_size: 10MB
+  backup_count: 5
+resource_groups:
+- name: gpu_intensive
+  description: GPU密集型任务
+  max_concurrent: 1
+- name: redroid
+  description: ''
+  max_concurrent: 1

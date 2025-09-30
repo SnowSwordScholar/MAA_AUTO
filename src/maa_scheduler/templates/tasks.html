@@ -737,6 +737,51 @@
     let filteredTasks = [];
     let currentTaskId = null;
 
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    function getStatusColor(status) {
+        const colors = {
+            pending: 'secondary',
+            running: 'success',
+            completed: 'primary',
+            failed: 'danger',
+            cancelled: 'warning'
+        };
+        return colors[status] || 'secondary';
+    }
+
+    function getStatusText(status) {
+        const texts = {
+            pending: '待执行',
+            running: '执行中',
+            completed: '已完成',
+            failed: '失败',
+            cancelled: '已取消'
+        };
+        return texts[status] || status || '-';
+    }
+
+    function formatDateTime(value) {
+        if (!value) {
+            return '-';
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return '-';
+        }
+        return date.toLocaleString();
+    }
+
     // 加载任务列表
     async function loadTasks() {
         try {
@@ -794,20 +839,21 @@
         filteredTasks.forEach(task => {
             const statusColor = getStatusColor(task.status);
             const statusText = getStatusText(task.status);
-            const nextRunTime = task.next_run_time ? new Date(task.next_run_time).toLocaleString() : '-';
+            const triggerType = task.trigger?.trigger_type || task.trigger_type;
+            const nextRunTime = formatDateTime(task.next_run_time);
 
             html += `
                 <tr>
                     <td>
                         <div>
-                            <strong>${task.name}</strong>
-                            ${task.description ? `<br><small class="text-muted">${task.description}</small>` : ''}
+                            <strong>${escapeHtml(task.name)}</strong>
+                            ${task.description ? `<br><small class="text-muted">${escapeHtml(task.description)}</small>` : ''}
                         </div>
                     </td>
                     <td><span class="badge bg-${statusColor}">${statusText}</span></td>
                     <td><span class="badge bg-secondary">${task.priority}</span></td>
-                    <td><span class="badge bg-info">${task.resource_group}</span></td>
-                    <td>${getTriggerTypeText(task.trigger_type)}</td>
+                    <td><span class="badge bg-info">${escapeHtml(task.resource_group)}</span></td>
+                    <td>${getTriggerTypeText(triggerType)}</td>
                     <td><small>${nextRunTime}</small></td>
                     <td>
                         <div class="btn-group btn-group-sm">
@@ -840,11 +886,11 @@
     // 获取触发器类型文本
     function getTriggerTypeText(type) {
         const types = {
-            'cron': 'Cron定时',
+            'scheduled': '定时执行',
             'interval': '间隔执行',
-            'random': '随机时间'
+            'random_time': '随机时间'
         };
-        return types[type] || type;
+        return types[type] || type || '-';
     }
 
     // 过滤任务
@@ -886,10 +932,10 @@
     // 查看任务详情
     async function viewTask(taskId) {
         try {
-            const taskDetail = await apiRequest(`/api/tasks/${taskId}`);
-            const task = taskDetail.task;
-            const status = taskDetail.status;
-            const result = taskDetail.result;
+            const taskConfig = await apiRequest(`/api/tasks/${taskId}`);
+            const taskFromList = tasks.find(t => t.id === taskId);
+            const status = taskFromList ? taskFromList.status : 'pending';
+            const trigger = taskConfig.trigger || {};
 
             currentTaskId = taskId;
 
@@ -898,27 +944,27 @@
                     <div class="col-md-6">
                         <h6>基本信息</h6>
                         <table class="table table-sm">
-                            <tr><th>名称</th><td>${task.name}</td></tr>
-                            <tr><th>描述</th><td>${task.description || '-'}</td></tr>
-                            <tr><th>优先级</th><td>${task.priority}</td></tr>
-                            <tr><th>资源分组</th><td>${task.resource_group}</td></tr>
+                            <tr><th>名称</th><td>${escapeHtml(taskConfig.name)}</td></tr>
+                            <tr><th>描述</th><td>${escapeHtml(taskConfig.description) || '-'}</td></tr>
+                            <tr><th>优先级</th><td>${taskConfig.priority}</td></tr>
+                            <tr><th>资源分组</th><td>${escapeHtml(taskConfig.resource_group)}</td></tr>
                             <tr><th>状态</th><td><span class="badge bg-${getStatusColor(status)}">${getStatusText(status)}</span></td></tr>
+                            <tr><th>下次执行</th><td>${taskFromList ? formatDateTime(taskFromList.next_run_time) : '-'}</td></tr>
                         </table>
                     </div>
                     <div class="col-md-6">
                         <h6>触发配置</h6>
                         <table class="table table-sm">
-                            <tr><th>触发类型</th><td>${getTriggerTypeText(task.trigger.trigger_type)}</td></tr>
+                            <tr><th>触发类型</th><td>${getTriggerTypeText(trigger.trigger_type)}</td></tr>
             `;
 
-            if (task.trigger.trigger_type === 'cron') {
-                html += `<tr><th>Cron表达式</th><td>${task.trigger.cron_expression || '-'}</td></tr>`;
-            } else if (task.trigger.trigger_type === 'interval') {
-                html += `<tr><th>间隔时间</th><td>${task.trigger.interval_seconds} 秒</td></tr>`;
-            } else if (task.trigger.trigger_type === 'random') {
-                html += `
-                    <tr><th>时间范围</th><td>${task.trigger.random_start_time || '-'} ~ ${task.trigger.random_end_time || '-'}</td></tr>
-                `;
+            if (trigger.trigger_type === 'scheduled') {
+                html += `<tr><th>开始时间</th><td>${trigger.start_time || '-'}</td></tr>`;
+                html += `<tr><th>结束时间</th><td>${trigger.end_time || '-'}</td></tr>`;
+            } else if (trigger.trigger_type === 'interval') {
+                html += `<tr><th>间隔分钟</th><td>${trigger.interval_minutes ?? '-'} 分钟</td></tr>`;
+            } else if (trigger.trigger_type === 'random_time') {
+                html += `<tr><th>随机范围</th><td>${trigger.random_start_time || '-'} ~ ${trigger.random_end_time || '-'}</td></tr>`;
             }
 
             html += `
@@ -929,45 +975,18 @@
                     <div class="col-12">
                         <h6>执行配置</h6>
                         <table class="table table-sm">
-                            <tr><th>执行命令</th><td><code>${task.main_command}</code></td></tr>
-                            <tr><th>工作目录</th><td>${task.working_directory || '-'}</td></tr>
-                            <tr><th>模拟器任务</th><td>${task.is_emulator_task ? '是' : '否'}</td></tr>
-            `;
-
-            if (task.is_emulator_task) {
-                html += `
-                    <tr><th>设备ID</th><td>${task.emulator_device_id || '-'}</td></tr>
-                    <tr><th>目标分辨率</th><td>${task.target_resolution || '-'}</td></tr>
-                    <tr><th>启动应用</th><td>${task.startup_app || '-'}</td></tr>
-                `;
-            }
-
-            html += `
+                            <tr><th>执行命令</th><td><code>${escapeHtml(taskConfig.main_command)}</code></td></tr>
+                            <tr><th>启用ADB唤醒</th><td>${taskConfig.enable_adb_wakeup ? '是' : '否'}</td></tr>
+                            <tr><th>ADB设备ID</th><td>${escapeHtml(taskConfig.adb_device_id) || '-'}</td></tr>
+                            <tr><th>全局日志</th><td>${taskConfig.enable_global_log ? '是' : '否'}</td></tr>
+                            <tr><th>临时日志</th><td>${taskConfig.enable_temp_log ? '是' : '否'}</td></tr>
                         </table>
                     </div>
                 </div>
             `;
 
-            if (result) {
-                html += `
-                    <div class="row">
-                        <div class="col-12">
-                            <h6>执行结果</h6>
-                            <table class="table table-sm">
-                                <tr><th>开始时间</th><td>${result.start_time ? new Date(result.start_time).toLocaleString() : '-'}</td></tr>
-                                <tr><th>结束时间</th><td>${result.end_time ? new Date(result.end_time).toLocaleString() : '-'}</td></tr>
-                                <tr><th>执行时长</th><td>${result.duration ? result.duration.toFixed(2) + ' 秒' : '-'}</td></tr>
-                                <tr><th>返回码</th><td>${result.return_code}</td></tr>
-                                <tr><th>结果消息</th><td>${result.message || '-'}</td></tr>
-                            </table>
-                        </div>
-                    </div>
-                `;
-            }
-
             document.getElementById('task-detail-content').innerHTML = html;
 
-            // 更新按钮状态
             const runBtn = document.getElementById('run-task-btn');
             const cancelBtn = document.getElementById('cancel-task-btn');
 

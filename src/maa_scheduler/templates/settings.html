@@ -186,55 +186,60 @@
             </div>
             <div class="card-body">
                 <form id="notification-settings-form">
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i>
-                        通知配置通过环境变量设置，请编辑 <code>.env</code> 文件进行配置。
-                    </div>
-                    
                     <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label">Webhook UID</label>
-                            <input type="text" class="form-control" id="webhook-uid" readonly>
+                        <div class="col-md-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="notification_enabled" id="notification-enabled">
+                                <label class="form-check-label" for="notification-enabled">启用通知</label>
+                            </div>
                         </div>
-                        <div class="col-md-8">
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
                             <label class="form-label">Webhook URL</label>
-                            <input type="text" class="form-control" id="webhook-url" readonly>
+                            <input type="text" class="form-control" name="webhook_base_url" placeholder="例如: https://wxpusher.zjiecode.com/api/send/message">
+                        </div>
+                    </div>
+                     <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Webhook UID</label>
+                            <input type="text" class="form-control" name="webhook_uid" placeholder="你的 WxPusher UID">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Webhook Token</label>
+                            <input type="password" class="form-control" name="webhook_token" placeholder="你的 WxPusher App Token">
                         </div>
                     </div>
                     
                     <div class="row mb-3">
                         <div class="col-12">
-                            <h6>通知事件配置</h6>
+                            <h6>通知事件</h6>
                         </div>
                         <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_on_startup" id="notify-startup" checked>
-                                <label class="form-check-label" for="notify-startup">系统启动通知</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="notify_on_startup" id="notify-startup">
+                                <label class="form-check-label" for="notify-startup">系统启动</label>
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_on_shutdown" id="notify-shutdown" checked>
-                                <label class="form-check-label" for="notify-shutdown">系统关闭通知</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_on_error" id="notify-error" checked>
-                                <label class="form-check-label" for="notify-error">系统错误通知</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="notify_on_shutdown" id="notify-shutdown">
+                                <label class="form-check-label" for="notify-shutdown">系统关闭</label>
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">通知发送间隔 (秒)</label>
-                            <input type="number" class="form-control" name="notification_interval" value="60" min="10">
-                            <small class="form-text text-muted">相同通知的最小发送间隔</small>
+                     <div class="row mb-3">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="notify_on_task_success" id="notify-task-success">
+                                <label class="form-check-label" for="notify-task-success">任务成功</label>
+                            </div>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label">通知重试次数</label>
-                            <input type="number" class="form-control" name="notification_retries" value="3" min="0" max="10">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="notify_on_task_failure" id="notify-task-failure">
+                                <label class="form-check-label" for="notify-task-failure">任务失败</label>
+                            </div>
                         </div>
                     </div>
                     
@@ -387,6 +392,46 @@ localhost</textarea>
 <script>
     let currentConfig = {};
 
+    const getInput = (selector) => document.querySelector(selector);
+
+    const setInputValue = (selector, value) => {
+        const element = getInput(selector);
+        if (element) {
+            element.value = value ?? '';
+        }
+    };
+
+    const setCheckboxValue = (selector, checked) => {
+        const element = getInput(selector);
+        if (element) {
+            element.checked = Boolean(checked);
+        }
+    };
+
+    const setSelectValue = (selector, value) => {
+        const element = getInput(selector);
+        if (element && value !== undefined && value !== null) {
+            element.value = value;
+        }
+    };
+
+    const toInt = (value, defaultValue = 0) => {
+        const parsed = parseInt(value, 10);
+        return Number.isNaN(parsed) ? defaultValue : parsed;
+    };
+
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
     // 初始化页面
     document.addEventListener('DOMContentLoaded', function() {
         loadSettings();
@@ -398,7 +443,7 @@ localhost</textarea>
         try {
             currentConfig = await apiRequest('/api/config');
             populateSettings(currentConfig);
-            loadResourceGroups();
+            await loadResourceGroups();
         } catch (error) {
             console.error('加载设置失败:', error);
             showToast('加载设置失败', 'danger');
@@ -407,61 +452,88 @@ localhost</textarea>
 
     // 填充设置表单
     function populateSettings(config) {
-        // 基础设置
-        if (config.app_name) document.querySelector('input[name="app_name"]').value = config.app_name;
-        if (config.version) document.querySelector('input[name="version"]').value = config.version;
-        if (config.web_host) document.querySelector('input[name="web_host"]').value = config.web_host;
-        if (config.web_port) document.querySelector('input[name="web_port"]').value = config.web_port;
-        document.querySelector('input[name="debug"]').checked = config.debug || false;
+        const app = config?.app ?? {};
+        const web = config?.web ?? {};
+        const logging = config?.logging ?? {};
+        const notification = app?.notification ?? {};
+        const scheduler = config?.scheduler ?? {};
+        const webhook = config?.webhook ?? null;
 
-        // 调度器设置
-        document.querySelector('input[name="scheduler_enabled"]').checked = config.scheduler_enabled !== false;
-        if (config.max_workers) document.querySelector('input[name="max_workers"]').value = config.max_workers;
-        if (config.task_timeout) document.querySelector('input[name="task_timeout"]').value = config.task_timeout;
+        setInputValue('input[name="app_name"]', config.app_name ?? 'MAA Scheduler');
+        setInputValue('input[name="version"]', config.version ?? '0.1.0');
 
-        // 日志设置
-        if (config.log_level) document.querySelector('select[name="log_level"]').value = config.log_level;
-        if (config.log_file) document.querySelector('input[name="log_file"]').value = config.log_file;
-        if (config.log_max_size) document.querySelector('input[name="log_max_size"]').value = config.log_max_size;
-        if (config.log_backup_count) document.querySelector('input[name="log_backup_count"]').value = config.log_backup_count;
+        setInputValue('input[name="web_host"]', web.host ?? '127.0.0.1');
+        setInputValue('input[name="web_port"]', web.port ?? 8080);
+        setCheckboxValue('input[name="debug"]', web.debug ?? false);
 
-        // Webhook 设置
-        if (config.webhook) {
-            document.getElementById('webhook-uid').value = config.webhook.uid || '';
-            document.getElementById('webhook-url').value = config.webhook.base_url || '';
-        }
+        const schedulerEnabled = scheduler.enabled !== undefined ? scheduler.enabled : app.mode !== 'single_task';
+        setCheckboxValue('input[name="scheduler_enabled"]', schedulerEnabled);
+        setInputValue('input[name="max_workers"]', scheduler.max_workers ?? 4);
+        setSelectValue('select[name="default_mode"]', app.mode ?? 'scheduler');
+        setInputValue('input[name="task_timeout"]', app.task_timeout ?? scheduler.task_timeout ?? 3600);
+        setInputValue('input[name="queue_check_interval"]', scheduler.queue_check_interval ?? 5);
+
+        setSelectValue('select[name="log_level"]', logging.level ?? 'INFO');
+        setInputValue('input[name="log_file"]', logging.file ?? 'logs/maa_scheduler.log');
+        setInputValue('input[name="log_max_size"]', logging.max_size ?? '10MB');
+        setInputValue('input[name="log_backup_count"]', logging.backup_count ?? 5);
+
+        setCheckboxValue('input[name="notification_enabled"]', Boolean(webhook));
+        setInputValue('input[name="webhook_base_url"]', webhook?.base_url ?? '');
+        setInputValue('input[name="webhook_uid"]', webhook?.uid ?? '');
+        setInputValue('input[name="webhook_token"]', webhook?.token ?? '');
+
+        setCheckboxValue('input[name="notify_on_startup"]', notification.notify_on_startup ?? false);
+        setCheckboxValue('input[name="notify_on_shutdown"]', notification.notify_on_shutdown ?? false);
+        setCheckboxValue('input[name="notify_on_task_success"]', notification.notify_on_task_success ?? false);
+        setCheckboxValue('input[name="notify_on_task_failure"]', notification.notify_on_task_failure ?? false);
     }
 
     // 加载资源分组
     async function loadResourceGroups() {
         try {
-            const groups = await apiRequest('/api/resource-groups');
+            const groupsStatus = await apiRequest('/api/resource-groups');
             const container = document.getElementById('resource-groups-list');
-            
+            const configGroups = (currentConfig?.resource_groups ?? []).reduce((acc, group) => {
+                acc[group.name] = group;
+                return acc;
+            }, {});
+
             container.innerHTML = '';
-            
-            Object.values(groups).forEach((group, index) => {
+
+            const renderedNames = new Set();
+
+            const renderGroup = (group) => {
+                const name = group.name ?? '';
+                if (!name) {
+                    return;
+                }
+                const description = group.description ?? '';
+                const maxConcurrent = toInt(group.max_concurrent ?? 1, 1);
+                const runningCount = toInt(group.running_count ?? 0, 0);
+                const badgeClass = runningCount < maxConcurrent ? 'bg-info' : 'bg-warning';
+
                 const groupHtml = `
-                    <div class="card mb-3" data-group="${group.name}">
+                    <div class="card mb-3" data-group="${escapeHtml(name)}">
                         <div class="card-body">
                             <div class="row align-items-center">
                                 <div class="col-md-3">
-                                    <input type="text" class="form-control" value="${group.name}" 
+                                    <input type="text" class="form-control" value="${escapeHtml(name)}" 
                                            placeholder="分组名称" data-field="name">
                                 </div>
                                 <div class="col-md-4">
-                                    <input type="text" class="form-control" value="${group.description}" 
+                                    <input type="text" class="form-control" value="${escapeHtml(description)}" 
                                            placeholder="分组描述" data-field="description">
                                 </div>
                                 <div class="col-md-2">
-                                    <input type="number" class="form-control" value="${group.max_concurrent}" 
+                                    <input type="number" class="form-control" value="${maxConcurrent}" 
                                            min="1" max="20" placeholder="最大并发" data-field="max_concurrent">
                                 </div>
                                 <div class="col-md-2">
-                                    <span class="badge bg-info">${group.running_count}/${group.max_concurrent}</span>
+                                    <span class="badge ${badgeClass}">${runningCount}/${maxConcurrent}</span>
                                 </div>
                                 <div class="col-md-1">
-                                    <button class="btn btn-outline-danger btn-sm" onclick="removeResourceGroup('${group.name}')">
+                                    <button class="btn btn-outline-danger btn-sm" onclick="removeResourceGroup('${escapeHtml(name)}')">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
@@ -470,8 +542,30 @@ localhost</textarea>
                     </div>
                 `;
                 container.innerHTML += groupHtml;
+                renderedNames.add(name);
+            };
+
+            Object.values(groupsStatus).forEach(group => {
+                const configGroup = configGroups[group.name] ?? {};
+                renderGroup({
+                    name: group.name,
+                    description: configGroup.description ?? group.description,
+                    max_concurrent: configGroup.max_concurrent ?? group.max_concurrent,
+                    running_count: group.running_count ?? 0
+                });
             });
-            
+
+            (currentConfig?.resource_groups ?? []).forEach(group => {
+                if (!renderedNames.has(group.name)) {
+                    renderGroup({
+                        name: group.name,
+                        description: group.description,
+                        max_concurrent: group.max_concurrent,
+                        running_count: 0
+                    });
+                }
+            });
+
         } catch (error) {
             console.error('加载资源分组失败:', error);
         }
@@ -530,59 +624,157 @@ localhost</textarea>
             // 收集所有表单数据
             const configData = {};
             
+            const updatedConfig = JSON.parse(JSON.stringify(currentConfig || {}));
+
+            if (!updatedConfig.app) updatedConfig.app = {};
+            if (!updatedConfig.app.notification) updatedConfig.app.notification = {};
+            if (!updatedConfig.web) updatedConfig.web = {};
+            if (!updatedConfig.logging) updatedConfig.logging = {};
+
             // 基础设置
             const generalForm = document.getElementById('general-settings-form');
             if (generalForm) {
                 const formData = new FormData(generalForm);
-                for (const [key, value] of formData.entries()) {
-                    configData[key] = value;
-                }
+                updatedConfig.app_name = formData.get('app_name') || updatedConfig.app_name || 'MAA Scheduler';
+                updatedConfig.version = formData.get('version') || updatedConfig.version || '0.1.0';
+                updatedConfig.web.host = formData.get('web_host') || updatedConfig.web.host || '127.0.0.1';
+                updatedConfig.web.port = toInt(formData.get('web_port') ?? updatedConfig.web.port ?? 8080, 8080);
+                updatedConfig.web.debug = generalForm.querySelector('input[name="debug"]').checked;
             }
-            
+
             // 调度器设置
             const schedulerForm = document.getElementById('scheduler-settings-form');
             if (schedulerForm) {
-                const formData = new FormData(schedulerForm);
-                for (const [key, value] of formData.entries()) {
-                    if (key === 'scheduler_enabled' || key === 'debug') {
-                        configData[key] = true; // checkbox只在选中时发送
-                    } else if (key === 'max_workers' || key === 'task_timeout' || key === 'queue_check_interval' || key === 'web_port') {
-                        configData[key] = parseInt(value);
-                    } else {
-                        configData[key] = value;
-                    }
+                if (!updatedConfig.scheduler) {
+                    updatedConfig.scheduler = {};
                 }
-                
-                // 处理未选中的checkbox
-                if (!formData.has('scheduler_enabled')) configData['scheduler_enabled'] = false;
-                if (!formData.has('debug')) configData['debug'] = false;
+
+                const schedulerEnabledInput = schedulerForm.querySelector('input[name="scheduler_enabled"]');
+                const schedulerEnabled = schedulerEnabledInput ? schedulerEnabledInput.checked : true;
+                updatedConfig.scheduler.enabled = schedulerEnabled;
+
+                const defaultMode = schedulerForm.querySelector('select[name="default_mode"]').value;
+                updatedConfig.app.mode = schedulerEnabled ? (defaultMode || 'scheduler') : 'single_task';
+
+                const maxWorkersInput = schedulerForm.querySelector('input[name="max_workers"]');
+                if (maxWorkersInput) {
+                    updatedConfig.scheduler.max_workers = toInt(maxWorkersInput.value || updatedConfig.scheduler.max_workers || 1, 1);
+                }
+
+                const taskTimeoutInput = schedulerForm.querySelector('input[name="task_timeout"]');
+                if (taskTimeoutInput) {
+                    updatedConfig.app.task_timeout = toInt(taskTimeoutInput.value || updatedConfig.app.task_timeout || 3600, 3600);
+                }
+
+                const queueIntervalInput = schedulerForm.querySelector('input[name="queue_check_interval"]');
+                if (queueIntervalInput) {
+                    updatedConfig.scheduler.queue_check_interval = toInt(queueIntervalInput.value || updatedConfig.scheduler.queue_check_interval || 5, 5);
+                }
             }
-            
+
+            // 通知设置
+            const notificationForm = document.getElementById('notification-settings-form');
+            if (notificationForm) {
+                const notificationEnabled = notificationForm.querySelector('input[name="notification_enabled"]').checked;
+                const webhookBaseUrl = notificationForm.querySelector('input[name="webhook_base_url"]').value.trim();
+                const webhookUid = notificationForm.querySelector('input[name="webhook_uid"]').value.trim();
+                const webhookToken = notificationForm.querySelector('input[name="webhook_token"]').value.trim();
+
+                if (notificationEnabled && webhookBaseUrl && webhookUid && webhookToken) {
+                    updatedConfig.webhook = {
+                        base_url: webhookBaseUrl,
+                        uid: webhookUid,
+                        token: webhookToken
+                    };
+                } else {
+                    updatedConfig.webhook = null;
+                }
+
+                updatedConfig.app.notification.notify_on_startup = notificationForm.querySelector('input[name="notify_on_startup"]').checked;
+                updatedConfig.app.notification.notify_on_shutdown = notificationForm.querySelector('input[name="notify_on_shutdown"]').checked;
+
+                const notifySuccessInput = notificationForm.querySelector('input[name="notify_on_task_success"]');
+                if (notifySuccessInput) {
+                    updatedConfig.app.notification.notify_on_task_success = notifySuccessInput.checked;
+                }
+
+                const notifyFailureInput = notificationForm.querySelector('input[name="notify_on_task_failure"]');
+                if (notifyFailureInput) {
+                    updatedConfig.app.notification.notify_on_task_failure = notifyFailureInput.checked;
+                }
+            }
+
             // 日志设置
             const logForm = document.getElementById('log-settings-form');
             if (logForm) {
                 const formData = new FormData(logForm);
-                for (const [key, value] of formData.entries()) {
-                    if (key === 'log_backup_count') {
-                        configData[key] = parseInt(value);
-                    } else {
-                        configData[key] = value;
-                    }
-                }
+                updatedConfig.logging.level = formData.get('log_level') || updatedConfig.logging.level || 'INFO';
+                updatedConfig.logging.file = formData.get('log_file') || updatedConfig.logging.file || 'logs/maa_scheduler.log';
+                updatedConfig.logging.max_size = formData.get('log_max_size') || updatedConfig.logging.max_size || '10MB';
+                const backupCount = formData.get('log_backup_count');
+                updatedConfig.logging.backup_count = toInt(backupCount ?? updatedConfig.logging.backup_count ?? 5, 5);
             }
-            
-            // 发送保存请求
+
+            updatedConfig.resource_groups = collectResourceGroups();
+
+            if (!Array.isArray(updatedConfig.resource_groups) || updatedConfig.resource_groups.length === 0) {
+                updatedConfig.resource_groups = [
+                    { name: 'default', description: '默认资源组', max_concurrent: 1 }
+                ];
+            }
+
+            if (!updatedConfig.tasks) {
+                updatedConfig.tasks = currentConfig.tasks || [];
+            }
+
+            if (!updatedConfig.webhook) {
+                delete updatedConfig.webhook;
+            }
+
             const response = await apiRequest('/api/config', {
                 method: 'POST',
-                body: JSON.stringify(configData)
+                body: JSON.stringify(updatedConfig)
             });
             
-            showToast('设置保存成功！' + (response.restart_required ? '（部分设置需重启生效）' : ''), 'success');
+            const message = response?.message || '设置保存成功！';
+            showToast(message, 'success');
+            await loadSettings(); // 重新加载以显示最新状态
             
         } catch (error) {
             console.error('保存设置失败:', error);
             showToast('保存设置失败: ' + (error.message || '未知错误'), 'danger');
         }
+    }
+
+    function collectResourceGroups() {
+        const cards = document.querySelectorAll('#resource-groups-list .card');
+        const groups = [];
+
+        cards.forEach(card => {
+            const nameInput = card.querySelector('[data-field="name"]');
+            const descriptionInput = card.querySelector('[data-field="description"]');
+            const maxConcurrentInput = card.querySelector('[data-field="max_concurrent"]');
+
+            if (!nameInput) {
+                return;
+            }
+
+            const name = nameInput.value.trim();
+            if (!name) {
+                return;
+            }
+
+            const description = descriptionInput ? descriptionInput.value.trim() : '';
+            const maxConcurrent = maxConcurrentInput ? toInt(maxConcurrentInput.value || 1, 1) : 1;
+
+            groups.push({
+                name,
+                description,
+                max_concurrent: maxConcurrent
+            });
+        });
+
+        return groups;
     }
 
     // 测试通知
@@ -640,18 +832,30 @@ localhost</textarea>
         if (confirm('确定要重置所有设置为默认值吗？此操作不可恢复。')) {
             // 重置为默认值
             populateSettings({
-                app_name: 'MAA Scheduler',
-                version: '0.1.0',
-                debug: false,
-                web_host: '127.0.0.1',
-                web_port: 8080,
-                scheduler_enabled: true,
-                max_workers: 4,
-                task_timeout: 3600,
-                log_level: 'INFO',
-                log_file: 'logs/maa_scheduler.log',
-                log_max_size: '10MB',
-                log_backup_count: 5
+                app: {
+                    mode: 'scheduler',
+                    task_timeout: 3600,
+                    notification: {
+                        notify_on_startup: false,
+                        notify_on_shutdown: false,
+                        notify_on_task_success: false,
+                        notify_on_task_failure: false
+                    }
+                },
+                web: {
+                    host: '127.0.0.1',
+                    port: 8080,
+                    debug: false
+                },
+                logging: {
+                    level: 'INFO',
+                    file: 'logs/maa_scheduler.log',
+                    max_size: '10MB',
+                    backup_count: 5
+                },
+                resource_groups: [
+                    { name: 'default', description: '默认资源组', max_concurrent: 1 }
+                ]
             });
             showToast('设置已重置为默认值，请保存设置', 'info');
         }

@@ -50,3 +50,6 @@
 - [x] **修复 `AttributeError`**: 解决了由于代码重复和不正确的配置调用导致的一系列启动错误。
 - [x] **修复通知服务错误**: 解决了由于占位符 URL 导致的 `ClientConnectorDNSError`。
 - [x] **修复资源组警告**: 将任务配置文件中的 `general` 资源组更正为 `default`。
+
+
+# 很重要不要覆盖：使用 uv run 运行项目
