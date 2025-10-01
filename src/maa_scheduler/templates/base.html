@@ -181,16 +181,34 @@
                     },
                     ...options
                 });
-                
+
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || '请求失败');
+                    let errorDetail = '';
+                    try {
+                        const errorBody = await response.json();
+                        if (Array.isArray(errorBody?.detail)) {
+                            errorDetail = errorBody.detail
+                                .map(item => item?.msg || item?.detail || JSON.stringify(item))
+                                .join('; ');
+                        } else if (typeof errorBody?.detail === 'object') {
+                            errorDetail = JSON.stringify(errorBody.detail);
+                        } else if (errorBody?.detail) {
+                            errorDetail = errorBody.detail;
+                        } else if (errorBody?.message) {
+                            errorDetail = errorBody.message;
+                        }
+                    } catch (jsonError) {
+                        console.warn('解析错误响应失败:', jsonError);
+                    }
+
+                    const fallbackMessage = `请求失败 (${response.status})`;
+                    throw new Error(errorDetail || fallbackMessage);
                 }
-                
+
                 return await response.json();
             } catch (error) {
                 console.error('API请求错误:', error);
-                showToast(error.message, 'danger');
+                showToast(error.message || '请求失败', 'danger');
                 throw error;
             }
         }

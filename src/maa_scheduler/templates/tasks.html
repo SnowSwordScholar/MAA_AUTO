@@ -4,1391 +4,1025 @@
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i class="bi bi-list-task"></i> 任务管理</h1>
-    <div class="btn-toolbar mb-2 mb-md-0">
-        <div class="btn-group me-2">
-            <button type="button" class="btn btn-sm btn-primary" onclick="createTask()">
-                <i class="bi bi-plus-circle"></i> 新建任务
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadTasks()">
-                <i class="bi bi-arrow-clockwise"></i> 刷新
-            </button>
-        </div>
-    </div>
+	<h1 class="h2"><i class="bi bi-list-task me-2"></i>任务管理</h1>
+	<div class="btn-toolbar mb-2 mb-md-0">
+		<div class="btn-group">
+			<button type="button" class="btn btn-sm btn-primary" id="create-task-btn">
+				<i class="bi bi-plus-circle"></i> 新建任务
+			</button>
+			<button type="button" class="btn btn-sm btn-outline-secondary" id="refresh-task-btn">
+				<i class="bi bi-arrow-clockwise"></i> 刷新
+			</button>
+		</div>
+	</div>
 </div>
 
-<!-- 任务过滤器 -->
-<div class="row mb-3">
-    <div class="col-md-4">
-        <input type="text" class="form-control" id="task-search" placeholder="搜索任务名称...">
-    </div>
-    <div class="col-md-3">
-        <select class="form-select" id="status-filter">
-            <option value="">所有状态</option>
-            <option value="pending">待执行</option>
-            <option value="running">执行中</option>
-            <option value="completed">已完成</option>
-            <option value="failed">失败</option>
-            <option value="cancelled">已取消</option>
-        </select>
-    </div>
-    <div class="col-md-3">
-        <select class="form-select" id="group-filter">
-            <option value="">所有资源分组</option>
-        </select>
-    </div>
-    <div class="col-md-2">
-        <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
-            <i class="bi bi-x-circle"></i> 清除
-        </button>
-    </div>
+<div class="row g-3 mb-4">
+	<div class="col-md-4">
+		<div class="input-group">
+			<span class="input-group-text"><i class="bi bi-search"></i></span>
+			<input type="text" class="form-control" id="task-search" placeholder="搜索任务名称或描述...">
+		</div>
+	</div>
+	<div class="col-md-3">
+		<select class="form-select" id="status-filter">
+			<option value="">所有状态</option>
+			<option value="pending">待执行</option>
+			<option value="running">执行中</option>
+			<option value="completed">已完成</option>
+			<option value="failed">失败</option>
+			<option value="cancelled">已取消</option>
+		</select>
+	</div>
+	<div class="col-md-3">
+		<select class="form-select" id="group-filter">
+			<option value="">所有资源分组</option>
+		</select>
+	</div>
+	<div class="col-md-2 d-grid">
+		<button class="btn btn-outline-secondary" id="clear-filter-btn">
+			<i class="bi bi-x-circle"></i> 清除筛选
+		</button>
+	</div>
 </div>
 
-<!-- 任务列表 -->
-<div class="card">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>任务名称</th>
-                        <th>状态</th>
-                        <th>优先级</th>
-                        <th>资源分组</th>
-                        <th>触发类型</th>
-                        <th>下次执行</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="tasks-table-body">
-                    <!-- 任务数据将动态加载 -->
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div class="card shadow-sm mb-4">
+	<div class="card-body">
+		<div class="table-responsive">
+			<table class="table table-hover align-middle mb-0">
+				<thead class="table-light">
+					<tr>
+						<th>任务名称</th>
+						<th class="text-center">状态</th>
+						<th class="text-center">优先级</th>
+						<th class="text-center">资源分组</th>
+						<th class="text-center">触发类型</th>
+						<th class="text-center">下次执行</th>
+						<th class="text-end">操作</th>
+					</tr>
+				</thead>
+				<tbody id="tasks-table-body">
+					<tr>
+						<td colspan="7" class="text-center text-muted py-4">正在加载任务...</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</div>
 </div>
 
-<!-- 创建任务模态框 -->
-<div class="modal fade" id="createTaskModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">新建任务</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="task-form">
-                <div class="modal-body">
-                    <!-- 基本信息 -->
-                    <div class="row mb-3">
-                        <div class="col-md-8">
-                            <label class="form-label">任务名称 *</label>
-                            <input type="text" class="form-control" name="name" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">优先级</label>
-                            <select class="form-select" name="priority">
-                                <option value="1">1 (最高)</option>
-                                <option value="2">2</option>
-                                <option value="3">3</option>
-                                <option value="4">4</option>
-                                <option value="5" selected>5 (默认)</option>
-                                <option value="6">6</option>
-                                <option value="7">7</option>
-                                <option value="8">8</option>
-                                <option value="9">9</option>
-                                <option value="10">10 (最低)</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">任务描述</label>
-                        <textarea class="form-control" name="description" rows="2"></textarea>
-                    </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">资源分组 *</label>
-                            <select class="form-select" name="resource_group" id="resource-group-select" required>
-                                <!-- 动态加载 -->
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">触发类型 *</label>
-                            <select class="form-select" name="trigger_type" id="trigger-type-select" required>
-                                <option value="cron">Cron 定时</option>
-                                <option value="interval">间隔执行</option>
-                                <option value="random">随机时间</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <!-- 触发配置 -->
-                    <div id="trigger-config">
-                        <!-- Cron 触发器 -->
-                        <div id="cron-config" class="trigger-config mb-3">
-                            <label class="form-label">Cron 表达式</label>
-                            <input type="text" class="form-control" name="cron_expression" placeholder="例如: 0 9 * * * (每天9点)">
-                            <small class="form-text text-muted">
-                                格式: 秒 分 时 日 月 周年 
-                                <a href="https://crontab.guru/" target="_blank">在线生成器</a>
-                            </small>
-                        </div>
-                        
-                        <!-- 间隔触发器 -->
-                        <div id="interval-config" class="trigger-config mb-3" style="display: none;">
-                            <label class="form-label">间隔时间 (秒)</label>
-                            <input type="number" class="form-control" name="interval_seconds" min="60" placeholder="3600">
-                            <small class="form-text text-muted">最小间隔 60 秒</small>
-                        </div>
-                        
-                        <!-- 随机触发器 -->
-                        <div id="random-config" class="trigger-config mb-3" style="display: none;">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <label class="form-label">开始时间</label>
-                                    <input type="time" class="form-control" name="random_start_time">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">结束时间</label>
-                                    <input type="time" class="form-control" name="random_end_time">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 模拟器任务配置 -->
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="is_emulator_task" id="is-emulator-task">
-                            <label class="form-check-label" for="is-emulator-task">
-                                这是一个模拟器任务
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div id="emulator-config" style="display: none;">
-                        <div class="row mb-3">
-                            <div class="col-md-4">
-                                <label class="form-label">设备 ID</label>
-                                <input type="text" class="form-control" name="emulator_device_id" placeholder="模拟器设备ID">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">目标分辨率</label>
-                                <input type="text" class="form-control" name="target_resolution" placeholder="1920x1080">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">启动应用</label>
-                                <input type="text" class="form-control" name="startup_app" placeholder="应用包名">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 任务命令 -->
-                    <div class="mb-3">
-                        <label class="form-label">执行命令 *</label>
-                        <input type="text" class="form-control" name="main_command" required placeholder="要执行的命令">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">工作目录</label>
-                        <input type="text" class="form-control" name="working_directory" placeholder="留空使用当前目录">
-                    </div>
-                    
-                    <!-- 日志配置 -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="enable_global_log" id="enable-global-log" checked>
-                                <label class="form-check-label" for="enable-global-log">
-                                    启用全局日志
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="enable_temp_log" id="enable-temp-log">
-                                <label class="form-check-label" for="enable-temp-log">
-                                    启用临时日志
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 通知配置 -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_on_success" id="notify-on-success">
-                                <label class="form-check-label" for="notify-on-success">
-                                    成功时通知
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="notify_on_failure" id="notify-on-failure" checked>
-                                <label class="form-check-label" for="notify-on-failure">
-                                    失败时通知
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-primary">创建任务</button>
-                </div>
-            </form>
-        </div>
-    </div>
+<div class="modal fade" id="taskDetailModal" tabindex="-1" aria-hidden="true">
+	<div class="modal-dialog modal-lg modal-dialog-scrollable">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h5 class="modal-title">任务详情</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+			</div>
+			<div class="modal-body" id="task-detail-content">
+				<div class="text-center text-muted py-4">
+					<div class="spinner-border text-primary" role="status"></div>
+					<p class="mt-3 mb-0">加载中...</p>
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+				<button type="button" class="btn btn-success" id="run-task-btn" style="display: none;">
+					<i class="bi bi-play"></i> 立即执行
+				</button>
+				<button type="button" class="btn btn-warning" id="cancel-task-btn" style="display: none;">
+					<i class="bi bi-stop"></i> 取消任务
+				</button>
+			</div>
+		</div>
+	</div>
 </div>
 
-<!-- 任务详情模态框 -->
-<div class="modal fade" id="taskDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">任务详情</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="task-detail-content">
-                <!-- 任务详情内容 -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                <button type="button" class="btn btn-primary" id="run-task-btn" style="display: none;">立即执行</button>
-                <button type="button" class="btn btn-warning" id="cancel-task-btn" style="display: none;">取消任务</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 任务创建/编辑模态框 -->
 <div class="modal fade" id="taskModal" tabindex="-1" aria-labelledby="taskModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="taskModalLabel">创建任务</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="taskForm">
-                    <input type="hidden" id="taskId" name="id">
-                    
-                    <!-- 基本信息 -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">任务名称 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="taskName" name="name" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">任务类型</label>
-                            <select class="form-select" id="taskType" name="task_type" onchange="toggleAdbOption()">
-                                <option value="console">控制台任务</option>
-                                <option value="maa">MAA 任务</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">任务描述</label>
-                        <textarea class="form-control" id="taskDescription" name="description" rows="2"></textarea>
-                    </div>
-                    
-                    <!-- 执行配置 -->
-                    <h6 class="mb-3"><i class="bi bi-terminal"></i> 执行配置</h6>
-                    <div class="mb-3">
-                        <label class="form-label">命令 <span class="text-danger">*</span></label>
-                        <textarea class="form-control font-monospace" id="mainCommand" name="main_command" 
-                                  rows="3" placeholder="输入要执行的完整命令" required></textarea>
-                        <small class="form-text text-muted">支持复杂的 MAA 命令，请手动输入完整的命令行</small>
-                    </div>
-                    
-                    <!-- ADB唤醒选项（仅MAA任务显示） -->
-                    <div id="adbWakeupOption" style="display: none;">
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="enableAdbWakeup" name="enable_adb_wakeup">
-                            <label class="form-check-label" for="enableAdbWakeup">
-                                启用 ADB 唤醒屏幕
-                            </label>
-                            <small class="form-text text-muted d-block">执行任务前自动唤醒模拟器屏幕</small>
-                        </div>
-                        <div id="emulatorConfig" style="display: none;">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">模拟器设备ID</label>
-                                    <input type="text" class="form-control" id="emulatorDeviceId" name="emulator_device_id" 
-                                           placeholder="127.0.0.1:5555">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">目标分辨率</label>
-                                    <input type="text" class="form-control" id="targetResolution" name="target_resolution" 
-                                           placeholder="1920x1080">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 调度配置 -->
-                    <h6 class="mb-3"><i class="bi bi-clock"></i> 调度配置</h6>
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label">触发类型</label>
-                            <select class="form-select" id="triggerType" name="trigger_type" onchange="changeTriggerType()">
-                                <option value="timed">定时执行</option>
-                                <option value="interval">间隔执行</option>
-                                <option value="random">随机时间执行</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">优先级</label>
-                            <select class="form-select" id="taskPriority" name="priority">
-                                <option value="1">低 (1)</option>
-                                <option value="5" selected>正常 (5)</option>
-                                <option value="10">高 (10)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">资源分组</label>
-                            <select class="form-select" id="resourceGroup" name="resource_group">
-                                <option value="default">默认分组</option>
-                                <option value="general">通用任务分组</option>
-                                <option value="camera">摄像头设备分组</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <!-- 触发器配置 -->
-                    <div id="timedConfig" class="trigger-config">
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> 定时执行：支持在用户设定的固定时间段内执行任务（例如，每天 9:00-18:00）
-                        </div>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="useCronExpression" name="use_cron" onchange="toggleCronExpression()">
-                            <label class="form-check-label" for="useCronExpression">
-                                使用精确的 Cron 表达式
-                            </label>
-                        </div>
-                        <div id="timeRangeDiv">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">开始时间</label>
-                                    <input type="time" class="form-control" id="timedStartTime" name="start_time" value="09:00">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">结束时间</label>
-                                    <input type="time" class="form-control" id="timedEndTime" name="end_time" value="18:00">
-                                </div>
-                            </div>
-                        </div>
-                        <div id="cronExpressionDiv" style="display: none;">
-                            <div class="mb-3">
-                                <label class="form-label">Cron 表达式</label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" id="cronExpression" name="cron_expression" placeholder="0 9 * * *">
-                                    <button class="btn btn-outline-secondary" type="button" onclick="showCronHelper()">
-                                        <i class="bi bi-question-circle"></i>
-                                    </button>
-                                </div>
-                                <small class="form-text text-muted">格式: 分 时 日 月 周 (例: 0 9 * * * 表示每天9点)</small>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="intervalConfig" class="trigger-config" style="display: none;">
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> 间隔执行：基于上次执行完成时间，在设定的间隔后再次执行（例如，每 2 小时执行一次）
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label">间隔小时数</label>
-                                <input type="number" class="form-control" id="intervalHours" name="interval_hours" value="2" min="1" max="168">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">时间单位</label>
-                                <select class="form-select" id="intervalUnit" name="interval_unit">
-                                    <option value="seconds">秒</option>
-                                    <option value="minutes">分钟</option>
-                                    <option value="hours">小时</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="random_timeConfig" class="trigger-config" style="display: none;">
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> 随机时间：在指定时间段内随机选择一个时间点执行（如10:00-12:00内随机执行）。
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label">开始时间</label>
-                                <input type="time" class="form-control" id="randomStartTime" name="random_start_time" value="10:00">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">结束时间</label>
-                                <input type="time" class="form-control" id="randomEndTime" name="random_end_time" value="12:00">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 执行配置 -->
-                    <h6 class="mb-3"><i class="bi bi-play-circle"></i> 执行配置</h6>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">MAA 配置文件</label>
-                            <input type="text" class="form-control" id="maaConfig" name="maa_config" placeholder="config.json">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">任务参数</label>
-                            <input type="text" class="form-control" id="taskArgs" name="task_args" placeholder="启动 刷理智">
-                        </div>
-                    </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="taskEnabled" name="enabled" checked>
-                                <label class="form-check-label" for="taskEnabled">启用任务</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="allowConcurrent" name="allow_concurrent">
-                                <label class="form-check-label" for="allowConcurrent">允许并发</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="enableNotification" name="enable_notification">
-                                <label class="form-check-label" for="enableNotification">启用通知</label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 高级配置 -->
-                    <div class="accordion mb-3" id="advancedConfig">
-                        <div class="accordion-item">
-                            <h2 class="accordion-header" id="advancedHeading">
-                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" 
-                                        data-bs-target="#advancedCollapse" aria-expanded="false">
-                                    <i class="bi bi-gear me-2"></i> 高级配置
-                                </button>
-                            </h2>
-                            <div id="advancedCollapse" class="accordion-collapse collapse" data-bs-parent="#advancedConfig">
-                                <div class="accordion-body">
-                                    <div class="row mb-3">
-                                        <div class="col-md-6">
-                                            <label class="form-label">超时时间 (秒)</label>
-                                            <input type="number" class="form-control" id="taskTimeout" name="timeout" value="3600" min="60">
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label">重试次数</label>
-                                            <input type="number" class="form-control" id="retryCount" name="retry_count" value="0" min="0" max="5">
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- 日志配置 -->
-                                    <h6 class="mt-4 mb-3"><i class="bi bi-file-text"></i> 日志配置</h6>
-                                    <div class="row mb-3">
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="enableGlobalLog" name="enable_global_log" checked>
-                                                <label class="form-check-label" for="enableGlobalLog">
-                                                    启用全局日志
-                                                </label>
-                                                <small class="form-text text-muted d-block">将任务日志实时输出到程序的统一日志中</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="enableTempLog" name="enable_temp_log" onchange="toggleTempLogOptions()">
-                                                <label class="form-check-label" for="enableTempLog">
-                                                    启用临时日志
-                                                </label>
-                                                <small class="form-text text-muted d-block">暂时记录日志到独立文件，供后续分析</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- 后置任务配置 -->
-                                    <h6 class="mt-4 mb-3"><i class="bi bi-arrow-right-circle"></i> 后置任务配置</h6>
-                                    
-                                    <!-- 基本通知配置 -->
-                                    <div class="row mb-3">
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="notifyOnSuccess" name="notify_on_success" onchange="toggleNotificationConfig('success')">
-                                                <label class="form-check-label" for="notifyOnSuccess">
-                                                    <strong>成功时推送通知</strong>
-                                                </label>
-                                                <small class="form-text text-muted d-block">当任务返回"成功"状态时触发推送</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="notifyOnFailure" name="notify_on_failure" onchange="toggleNotificationConfig('failure')">
-                                                <label class="form-check-label" for="notifyOnFailure">
-                                                    <strong>失败时推送通知</strong>
-                                                </label>
-                                                <small class="form-text text-muted d-block">当任务返回"失败"状态时触发推送</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- 成功通知配置 -->
-                                    <div id="successNotificationConfig" style="display: none;" class="border rounded p-3 mb-3">
-                                        <h6 class="text-success mb-3"><i class="bi bi-check-circle"></i> 成功通知配置</h6>
-                                        <div class="row mb-3">
-                                            <div class="col-md-6">
-                                                <label class="form-label">推送标题</label>
-                                                <input type="text" class="form-control" id="successTitle" name="success_title" 
-                                                       placeholder="任务执行成功 - {task_name}">
-                                                <small class="form-text text-muted">支持变量: {task_name}, {timestamp}</small>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label">推送标签</label>
-                                                <input type="text" class="form-control" id="successTag" name="success_tag" 
-                                                       placeholder="MAA,任务,成功">
-                                                <small class="form-text text-muted">用逗号分隔多个标签</small>
-                                            </div>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">推送内容</label>
-                                            <textarea class="form-control" id="successContent" name="success_content" rows="3"
-                                                      placeholder="任务 {task_name} 于 {timestamp} 执行成功。&#10;执行时长: {duration}&#10;状态: 正常完成"></textarea>
-                                            <small class="form-text text-muted">支持变量: {task_name}, {timestamp}, {duration}, {output}</small>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- 失败通知配置 -->
-                                    <div id="failureNotificationConfig" style="display: none;" class="border rounded p-3 mb-3">
-                                        <h6 class="text-danger mb-3"><i class="bi bi-x-circle"></i> 失败通知配置</h6>
-                                        <div class="row mb-3">
-                                            <div class="col-md-6">
-                                                <label class="form-label">推送标题</label>
-                                                <input type="text" class="form-control" id="failureTitle" name="failure_title" 
-                                                       placeholder="任务执行失败 - {task_name}">
-                                                <small class="form-text text-muted">支持变量: {task_name}, {timestamp}</small>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label">推送标签</label>
-                                                <input type="text" class="form-control" id="failureTag" name="failure_tag" 
-                                                       placeholder="MAA,任务,失败">
-                                                <small class="form-text text-muted">用逗号分隔多个标签</small>
-                                            </div>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">推送内容</label>
-                                            <textarea class="form-control" id="failureContent" name="failure_content" rows="3"
-                                                      placeholder="任务 {task_name} 于 {timestamp} 执行失败。&#10;错误信息: {error_message}&#10;请检查配置和日志"></textarea>
-                                            <small class="form-text text-muted">支持变量: {task_name}, {timestamp}, {duration}, {error_message}, {output}</small>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- 关键词监控配置 -->
-                                    <div id="tempLogOptions" style="display: none;">
-                                        <div class="form-check mb-3">
-                                            <input class="form-check-input" type="checkbox" id="enableKeywordMonitoring" name="enable_keyword_monitoring" onchange="toggleKeywordConfig()">
-                                            <label class="form-check-label" for="enableKeywordMonitoring">
-                                                <strong>启用日志关键词监控</strong>
-                                            </label>
-                                            <small class="form-text text-muted d-block">抓取日志中的关键词，匹配时触发自定义推送</small>
-                                        </div>
-                                        
-                                        <div id="keywordMonitoringConfig" style="display: none;" class="border rounded p-3 mb-3">
-                                            <h6 class="text-warning mb-3"><i class="bi bi-search"></i> 关键词监控配置</h6>
-                                            <div class="mb-3">
-                                                <label class="form-label">监控关键词</label>
-                                                <input type="text" class="form-control" id="logKeywords" name="log_keywords" 
-                                                       placeholder="错误,完成,timeout,success (用逗号分隔)">
-                                                <small class="form-text text-muted">在临时日志中查找这些关键词，匹配时触发通知</small>
-                                            </div>
-                                            <div class="row mb-3">
-                                                <div class="col-md-6">
-                                                    <label class="form-label">推送标题</label>
-                                                    <input type="text" class="form-control" id="keywordTitle" name="keyword_title" 
-                                                           placeholder="关键词触发 - {task_name}">
-                                                    <small class="form-text text-muted">支持变量: {task_name}, {keywords}</small>
-                                                </div>
-                                                <div class="col-md-6">
-                                                    <label class="form-label">推送标签</label>
-                                                    <input type="text" class="form-control" id="keywordTag" name="keyword_tag" 
-                                                           placeholder="MAA,关键词,监控">
-                                                    <small class="form-text text-muted">用逗号分隔多个标签</small>
-                                                </div>
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">推送内容</label>
-                                                <textarea class="form-control" id="keywordContent" name="keyword_content" rows="3"
-                                                          placeholder="任务 {task_name} 的日志中发现关键词: {matched_keywords}&#10;匹配行: {matched_lines}&#10;时间: {timestamp}"></textarea>
-                                                <small class="form-text text-muted">支持变量: {task_name}, {matched_keywords}, {matched_lines}, {timestamp}</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="saveTask()">保存任务</button>
-            </div>
-        </div>
-    </div>
-</div>
+	<div class="modal-dialog modal-xl modal-dialog-scrollable">
+		<div class="modal-content">
+			<form id="taskForm">
+				<div class="modal-header">
+					<h5 class="modal-title" id="taskModalLabel">创建任务</h5>
+					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+				</div>
+				<div class="modal-body">
+					<input type="hidden" id="taskId">
 
-<!-- Cron 表达式帮助模态框 -->
-<div class="modal fade" id="cronHelperModal" tabindex="-1" aria-labelledby="cronHelperModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="cronHelperModalLabel">Cron 表达式帮助</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>字段</th>
-                                <th>说明</th>
-                                <th>值域</th>
-                                <th>特殊字符</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>分钟</td>
-                                <td>分钟</td>
-                                <td>0-59</td>
-                                <td>, - * /</td>
-                            </tr>
-                            <tr>
-                                <td>小时</td>
-                                <td>小时</td>
-                                <td>0-23</td>
-                                <td>, - * /</td>
-                            </tr>
-                            <tr>
-                                <td>日期</td>
-                                <td>月份中的日期</td>
-                                <td>1-31</td>
-                                <td>, - * / ? L W</td>
-                            </tr>
-                            <tr>
-                                <td>月份</td>
-                                <td>月份</td>
-                                <td>1-12 或 JAN-DEC</td>
-                                <td>, - * /</td>
-                            </tr>
-                            <tr>
-                                <td>星期</td>
-                                <td>星期几</td>
-                                <td>0-6 或 SUN-SAT</td>
-                                <td>, - * / ? L #</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <h6>常用示例：</h6>
-                <div class="list-group">
-                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 9 * * *')">
-                        <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1">0 9 * * *</h6>
-                        </div>
-                        <p class="mb-1">每天上午9点执行</p>
-                    </a>
-                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 */2 * * *')">
-                        <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1">0 */2 * * *</h6>
-                        </div>
-                        <p class="mb-1">每2小时执行一次</p>
-                    </a>
-                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 9 * * 1-5')">
-                        <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1">0 9 * * 1-5</h6>
-                        </div>
-                        <p class="mb-1">工作日上午9点执行</p>
-                    </a>
-                    <a href="#" class="list-group-item list-group-item-action" onclick="setCronExpression('0 0 */3 * *')">
-                        <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1">0 0 */3 * *</h6>
-                        </div>
-                        <p class="mb-1">每3天午夜执行</p>
-                    </a>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-            </div>
-        </div>
-    </div>
+					<div class="row g-3">
+						<div class="col-md-6">
+							<label class="form-label">任务名称 <span class="text-danger">*</span></label>
+							<input type="text" class="form-control" id="taskName" required maxlength="100">
+						</div>
+						<div class="col-md-3">
+							<label class="form-label">优先级</label>
+							<input type="number" class="form-control" id="taskPriority" min="1" max="10" value="5" required>
+							<small class="text-muted">1 为最高优先级，10 为最低</small>
+						</div>
+						<div class="col-md-3">
+							<label class="form-label">资源分组</label>
+							<select class="form-select" id="resourceGroupSelect" required></select>
+							<small class="text-muted">任务将在所选分组的执行器上运行</small>
+						</div>
+						<div class="col-12">
+							<label class="form-label">任务描述</label>
+							<textarea class="form-control" id="taskDescription" rows="2" maxlength="300" placeholder="可选，描述任务用途"></textarea>
+						</div>
+						<div class="col-12">
+							<div class="form-check">
+								<input class="form-check-input" type="checkbox" id="taskEnabled" checked>
+								<label class="form-check-label" for="taskEnabled">启用该任务</label>
+							</div>
+						</div>
+					</div>
+
+					<div class="card mt-4">
+						<div class="card-header bg-light">
+							<i class="bi bi-clock me-2"></i> 调度配置
+						</div>
+						<div class="card-body">
+							<div class="row g-3 align-items-center mb-3">
+								<div class="col-md-4">
+									<label class="form-label">触发类型</label>
+									<select class="form-select" id="triggerType">
+										<option value="scheduled">定时执行</option>
+										<option value="interval">间隔执行</option>
+										<option value="random_time">随机时间</option>
+									</select>
+								</div>
+							</div>
+
+							<div id="scheduledConfig" class="trigger-config">
+								<div class="row g-3">
+									<div class="col-md-6">
+										<label class="form-label">开始时间</label>
+										<input type="time" class="form-control" id="scheduledStart" value="09:00">
+									</div>
+									<div class="col-md-6">
+										<label class="form-label">结束时间</label>
+										<input type="time" class="form-control" id="scheduledEnd" value="18:00">
+									</div>
+								</div>
+								<small class="text-muted">系统将在时间区间内按照调度策略执行任务。</small>
+							</div>
+
+							<div id="intervalConfig" class="trigger-config d-none">
+								<label class="form-label">间隔时间（分钟）</label>
+								<input type="number" class="form-control" id="intervalMinutes" min="1" value="30">
+								<small class="text-muted">任务完成后等待指定分钟数再次执行。</small>
+							</div>
+
+							<div id="randomTimeConfig" class="trigger-config d-none">
+								<div class="row g-3">
+									<div class="col-md-6">
+										<label class="form-label">随机开始时间</label>
+										<input type="time" class="form-control" id="randomStart" value="09:00">
+									</div>
+									<div class="col-md-6">
+										<label class="form-label">随机结束时间</label>
+										<input type="time" class="form-control" id="randomEnd" value="18:00">
+									</div>
+								</div>
+								<small class="text-muted">系统会在时间范围内随机选择执行时间。</small>
+							</div>
+						</div>
+					</div>
+
+					<div class="card mt-4">
+						<div class="card-header bg-light">
+							<i class="bi bi-play-circle me-2"></i> 执行配置
+						</div>
+						<div class="card-body">
+							<div class="mb-3">
+								<label class="form-label">执行命令 <span class="text-danger">*</span></label>
+								<textarea class="form-control font-monospace" id="mainCommand" rows="3" placeholder="输入完整的命令" required></textarea>
+								<small class="text-muted">命令将在调度器所在机器执行，建议使用绝对路径或明确的环境变量。</small>
+							</div>
+							<div class="form-check mb-2">
+								<input class="form-check-input" type="checkbox" id="enableAdbWakeup">
+								<label class="form-check-label" for="enableAdbWakeup">启用 ADB 唤醒设备</label>
+							</div>
+							<div id="adbConfigSection" class="row g-3 d-none">
+								<div class="col-md-6">
+									<label class="form-label">ADB 设备 ID</label>
+									<input type="text" class="form-control" id="adbDeviceId" placeholder="127.0.0.1:5555">
+								</div>
+							</div>
+							<div class="row g-3 mt-1">
+								<div class="col-md-6">
+									<div class="form-check">
+										<input class="form-check-input" type="checkbox" id="enableGlobalLog" checked>
+										<label class="form-check-label" for="enableGlobalLog">启用全局日志</label>
+									</div>
+								</div>
+								<div class="col-md-6">
+									<div class="form-check">
+										<input class="form-check-input" type="checkbox" id="enableTempLog">
+										<label class="form-check-label" for="enableTempLog">启用临时日志</label>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="card mt-4">
+						<div class="card-header bg-light">
+							<i class="bi bi-arrow-repeat me-2"></i> 后置任务配置
+						</div>
+						<div class="card-body">
+							<div class="form-check mb-3">
+								<input class="form-check-input" type="checkbox" id="pushNotificationEnabled">
+								<label class="form-check-label" for="pushNotificationEnabled">任务结束时发送推送通知</label>
+							</div>
+							<div id="pushNotificationConfig" class="border rounded p-3 mb-4 d-none">
+								<div class="row g-3 mb-3">
+									<div class="col-md-6">
+										<div class="form-check">
+											<input class="form-check-input" type="checkbox" id="pushNotifySuccess" checked>
+											<label class="form-check-label" for="pushNotifySuccess">任务成功时发送</label>
+										</div>
+									</div>
+									<div class="col-md-6">
+										<div class="form-check">
+											<input class="form-check-input" type="checkbox" id="pushNotifyFailure" checked>
+											<label class="form-check-label" for="pushNotifyFailure">任务失败时发送</label>
+										</div>
+									</div>
+								</div>
+								<div class="row g-3 mb-3">
+									<div class="col-md-6">
+										<label class="form-label">通知标题</label>
+										<input type="text" class="form-control" id="pushTitle" placeholder="任务 {task_name} {status}">
+									</div>
+									<div class="col-md-6">
+										<label class="form-label">通知标签</label>
+										<input type="text" class="form-control" id="pushTag" placeholder="task-status">
+									</div>
+								</div>
+								<div>
+									<label class="form-label">通知内容</label>
+									<textarea class="form-control" id="pushContent" rows="3" placeholder="任务 {task_name} 已{status}，耗时 {duration} 秒"></textarea>
+									<small class="text-muted">支持变量: {task_name}, {status}, {duration}, {start_time}, {end_time}</small>
+								</div>
+							</div>
+
+							<div id="keywordSection" class="d-none">
+								<hr>
+								<div class="form-check mb-3">
+									<input class="form-check-input" type="checkbox" id="keywordMonitoringEnabled">
+									<label class="form-check-label" for="keywordMonitoringEnabled">启用日志关键词监控并推送</label>
+									<small class="text-muted d-block">关键词监控依赖临时日志功能，请确保已启用。</small>
+								</div>
+								<div id="keywordConfig" class="border rounded p-3 d-none">
+									<div class="mb-3">
+										<label class="form-label">监控关键词</label>
+										<input type="text" class="form-control" id="keywordList" placeholder="错误,失败,timeout">
+										<small class="text-muted">使用逗号或换行分隔多个关键词，匹配任意一个即触发。</small>
+									</div>
+									<div class="row g-3 mb-3">
+										<div class="col-md-6">
+											<label class="form-label">通知标题</label>
+											<input type="text" class="form-control" id="keywordTitle" placeholder="检测到关键词: {keywords}">
+										</div>
+										<div class="col-md-6">
+											<label class="form-label">通知标签</label>
+											<input type="text" class="form-control" id="keywordTag" placeholder="keyword-alert">
+										</div>
+									</div>
+									<div>
+										<label class="form-label">通知内容</label>
+										<textarea class="form-control" id="keywordContent" rows="3" placeholder="任务 {task_name} 日志出现: {keywords}"></textarea>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+					<button type="submit" class="btn btn-primary" id="saveTaskBtn">
+						<span class="save-text">保存任务</span>
+						<span class="spinner-border spinner-border-sm ms-2 d-none" id="saveSpinner" role="status" aria-hidden="true"></span>
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    let tasks = [];
-    let resourceGroups = {};
-    let filteredTasks = [];
-    let currentTaskId = null;
+	let tasks = [];
+	let filteredTasks = [];
+	let resourceGroups = {};
+	let editingTaskId = null;
+	let currentTaskId = null;
+	let taskModalInstance = null;
+	let taskFormElement = null;
 
-    const escapeHtml = (value) => {
-        if (value === null || value === undefined) {
-            return '';
-        }
-        return String(value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    };
+	const statusColors = {
+		pending: 'secondary',
+		running: 'success',
+		completed: 'primary',
+		failed: 'danger',
+		cancelled: 'warning'
+	};
 
-    function getStatusColor(status) {
-        const colors = {
-            pending: 'secondary',
-            running: 'success',
-            completed: 'primary',
-            failed: 'danger',
-            cancelled: 'warning'
-        };
-        return colors[status] || 'secondary';
-    }
+	const statusTexts = {
+		pending: '待执行',
+		running: '执行中',
+		completed: '已完成',
+		failed: '失败',
+		cancelled: '已取消'
+	};
 
-    function getStatusText(status) {
-        const texts = {
-            pending: '待执行',
-            running: '执行中',
-            completed: '已完成',
-            failed: '失败',
-            cancelled: '已取消'
-        };
-        return texts[status] || status || '-';
-    }
+	const triggerTypeTexts = {
+		scheduled: '定时执行',
+		interval: '间隔执行',
+		random_time: '随机时间'
+	};
 
-    function formatDateTime(value) {
-        if (!value) {
-            return '-';
-        }
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) {
-            return '-';
-        }
-        return date.toLocaleString();
-    }
+	function escapeHtml(value) {
+		if (value === null || value === undefined) {
+			return '';
+		}
+		return String(value)
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#39;');
+	}
 
-    // 加载任务列表
-    async function loadTasks() {
-        try {
-            tasks = await apiRequest('/api/tasks');
-            filteredTasks = tasks;
-            updateTasksTable();
-        } catch (error) {
-            console.error('加载任务列表失败:', error);
-        }
-    }
+	function formatDateTime(value) {
+		if (!value) {
+			return '-';
+		}
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) {
+			return '-';
+		}
+		return date.toLocaleString();
+	}
 
-    // 加载资源分组
-    async function loadResourceGroups() {
-        try {
-            resourceGroups = await apiRequest('/api/resource-groups');
-            updateResourceGroupSelects();
-        } catch (error) {
-            console.error('加载资源分组失败:', error);
-        }
-    }
+	async function loadTasks() {
+		try {
+			const result = await apiRequest('/api/tasks');
+			tasks = Array.isArray(result) ? result : [];
+			filterTasks();
+		} catch (error) {
+			console.error('加载任务列表失败:', error);
+			showToast(error.message || '加载任务列表失败', 'danger');
+		}
+	}
 
-    // 更新资源分组选择器
-    function updateResourceGroupSelects() {
-        const selects = document.querySelectorAll('#resource-group-select, #group-filter');
-        selects.forEach(select => {
-            if (select.id === 'group-filter') {
-                select.innerHTML = '<option value="">所有资源分组</option>';
-            } else {
-                select.innerHTML = '';
-            }
-            
-            Object.values(resourceGroups).forEach(group => {
-                const option = document.createElement('option');
-                option.value = group.name;
-                option.textContent = `${group.name} (${group.description})`;
-                select.appendChild(option);
-            });
-        });
-    }
+	async function loadResourceGroups() {
+		try {
+			const result = await apiRequest('/api/resource-groups');
+			resourceGroups = result || {};
+			updateResourceGroupSelects();
+		} catch (error) {
+			console.error('加载资源分组失败:', error);
+			showToast(error.message || '加载资源分组失败', 'danger');
+		}
+	}
 
-    // 更新任务表格
-    function updateTasksTable() {
-        const tbody = document.getElementById('tasks-table-body');
-        
-        if (filteredTasks.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" class="text-center text-muted">暂无任务</td>
-                </tr>
-            `;
-            return;
-        }
+	function updateResourceGroupSelects() {
+		const filterSelect = document.getElementById('group-filter');
+		const formSelect = document.getElementById('resourceGroupSelect');
+		const currentValue = formSelect.value;
 
-        let html = '';
-        filteredTasks.forEach(task => {
-            const statusColor = getStatusColor(task.status);
-            const statusText = getStatusText(task.status);
-            const triggerType = task.trigger?.trigger_type || task.trigger_type;
-            const nextRunTime = formatDateTime(task.next_run_time);
+		filterSelect.innerHTML = '<option value="">所有资源分组</option>';
+		formSelect.innerHTML = '';
 
-            html += `
-                <tr>
-                    <td>
-                        <div>
-                            <strong>${escapeHtml(task.name)}</strong>
-                            ${task.description ? `<br><small class="text-muted">${escapeHtml(task.description)}</small>` : ''}
-                        </div>
-                    </td>
-                    <td><span class="badge bg-${statusColor}">${statusText}</span></td>
-                    <td><span class="badge bg-secondary">${task.priority}</span></td>
-                    <td><span class="badge bg-info">${escapeHtml(task.resource_group)}</span></td>
-                    <td>${getTriggerTypeText(triggerType)}</td>
-                    <td><small>${nextRunTime}</small></td>
-                    <td>
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary" onclick="viewTask('${task.id}')">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                            ${task.status === 'running' 
-                                ? `<button class="btn btn-outline-warning" onclick="cancelTask('${task.id}')">
-                                     <i class="bi bi-stop"></i>
-                                   </button>`
-                                : `<button class="btn btn-outline-success" onclick="runTask('${task.id}')" ${systemStatus.mode !== 'single_task' ? 'disabled' : ''}>
-                                     <i class="bi bi-play"></i>
-                                   </button>`
-                            }
-                            <button class="btn btn-outline-secondary" onclick="editTask('${task.id}')">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button class="btn btn-outline-danger" onclick="deleteTask('${task.id}')">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
+		const groups = Object.values(resourceGroups);
+		if (!groups.length) {
+			const option = document.createElement('option');
+			option.value = 'default';
+			option.textContent = 'default (默认)';
+			formSelect.appendChild(option);
+		} else {
+			groups.forEach(groupStatus => {
+				const option = document.createElement('option');
+				option.value = groupStatus.name;
+				option.textContent = `${groupStatus.name} (${groupStatus.description || '无描述'})`;
+				formSelect.appendChild(option);
 
-        tbody.innerHTML = html;
-    }
+				const filterOption = document.createElement('option');
+				filterOption.value = groupStatus.name;
+				filterOption.textContent = groupStatus.name;
+				filterSelect.appendChild(filterOption);
+			});
+		}
 
-    // 获取触发器类型文本
-    function getTriggerTypeText(type) {
-        const types = {
-            'scheduled': '定时执行',
-            'interval': '间隔执行',
-            'random_time': '随机时间'
-        };
-        return types[type] || type || '-';
-    }
+		if (currentValue) {
+			ensureResourceGroupOption(currentValue);
+			formSelect.value = currentValue;
+		}
+	}
 
-    // 过滤任务
-    function filterTasks() {
-        const search = document.getElementById('task-search').value.toLowerCase();
-        const status = document.getElementById('status-filter').value;
-        const group = document.getElementById('group-filter').value;
+	function ensureResourceGroupOption(groupName) {
+		if (!groupName) {
+			return;
+		}
+		const formSelect = document.getElementById('resourceGroupSelect');
+		const exists = Array.from(formSelect.options).some(option => option.value === groupName);
+		if (!exists) {
+			const option = document.createElement('option');
+			option.value = groupName;
+			option.textContent = `${groupName} (未在资源组配置中)`;
+			formSelect.appendChild(option);
+		}
+	}
 
-        filteredTasks = tasks.filter(task => {
-            let match = true;
-            
-            if (search && !task.name.toLowerCase().includes(search)) {
-                match = false;
-            }
-            
-            if (status && task.status !== status) {
-                match = false;
-            }
-            
-            if (group && task.resource_group !== group) {
-                match = false;
-            }
-            
-            return match;
-        });
+	function updateTasksTable() {
+		const tbody = document.getElementById('tasks-table-body');
+		if (!filteredTasks.length) {
+			tbody.innerHTML = `
+				<tr>
+					<td colspan="7" class="text-center text-muted py-4">暂无匹配的任务</td>
+				</tr>
+			`;
+			return;
+		}
 
-        updateTasksTable();
-    }
+		const mode = systemStatus?.mode || 'scheduler';
+		tbody.innerHTML = filteredTasks.map(task => {
+			const status = task.status || 'pending';
+			const statusBadge = statusColors[status] || 'secondary';
+			const statusText = statusTexts[status] || status;
+			const triggerType = task.trigger?.trigger_type || task.trigger_type || '-';
+			const nextRunTime = formatDateTime(task.next_run_time);
+			const resourceGroup = task.resource_group || '-';
+			const canManualRun = mode === 'single_task' && status !== 'running';
 
-    // 清除过滤器
-    function clearFilters() {
-        document.getElementById('task-search').value = '';
-        document.getElementById('status-filter').value = '';
-        document.getElementById('group-filter').value = '';
-        filteredTasks = tasks;
-        updateTasksTable();
-    }
+			const descriptionLine = task.description
+				? `<small class="text-muted">${escapeHtml(task.description)}</small>`
+				: '';
 
-    // 查看任务详情
-    async function viewTask(taskId) {
-        try {
-            const taskConfig = await apiRequest(`/api/tasks/${taskId}`);
-            const taskFromList = tasks.find(t => t.id === taskId);
-            const status = taskFromList ? taskFromList.status : 'pending';
-            const trigger = taskConfig.trigger || {};
+			const runBtn = canManualRun
+				? `<button class="btn btn-outline-success" onclick="runTask('${task.id}')" title="立即执行">
+						<i class="bi bi-play"></i>
+				   </button>`
+				: '';
 
-            currentTaskId = taskId;
+			const cancelBtn = status === 'running'
+				? `<button class="btn btn-outline-warning" onclick="cancelTask('${task.id}')" title="取消任务">
+						<i class="bi bi-stop"></i>
+				   </button>`
+				: '';
 
-            let html = `
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>基本信息</h6>
-                        <table class="table table-sm">
-                            <tr><th>名称</th><td>${escapeHtml(taskConfig.name)}</td></tr>
-                            <tr><th>描述</th><td>${escapeHtml(taskConfig.description) || '-'}</td></tr>
-                            <tr><th>优先级</th><td>${taskConfig.priority}</td></tr>
-                            <tr><th>资源分组</th><td>${escapeHtml(taskConfig.resource_group)}</td></tr>
-                            <tr><th>状态</th><td><span class="badge bg-${getStatusColor(status)}">${getStatusText(status)}</span></td></tr>
-                            <tr><th>下次执行</th><td>${taskFromList ? formatDateTime(taskFromList.next_run_time) : '-'}</td></tr>
-                        </table>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>触发配置</h6>
-                        <table class="table table-sm">
-                            <tr><th>触发类型</th><td>${getTriggerTypeText(trigger.trigger_type)}</td></tr>
-            `;
+			return `
+				<tr>
+					<td>
+						<div class="fw-semibold">${escapeHtml(task.name)}</div>
+						${descriptionLine}
+					</td>
+					<td class="text-center"><span class="badge bg-${statusBadge}">${statusText}</span></td>
+					<td class="text-center"><span class="badge bg-secondary">${task.priority}</span></td>
+					<td class="text-center">${escapeHtml(resourceGroup)}</td>
+					<td class="text-center">${triggerTypeTexts[triggerType] || triggerType}</td>
+					<td class="text-center"><small>${nextRunTime}</small></td>
+					<td class="text-end">
+						<div class="btn-group btn-group-sm" role="group">
+							<button class="btn btn-outline-primary" onclick="viewTask('${task.id}')" title="查看详情">
+								<i class="bi bi-eye"></i>
+							</button>
+							${runBtn}
+							${cancelBtn}
+							<button class="btn btn-outline-secondary" onclick="editTask('${task.id}')" title="编辑">
+								<i class="bi bi-pencil"></i>
+							</button>
+							<button class="btn btn-outline-danger" onclick="deleteTask('${task.id}')" title="删除">
+								<i class="bi bi-trash"></i>
+							</button>
+						</div>
+					</td>
+				</tr>
+			`;
+		}).join('');
+	}
 
-            if (trigger.trigger_type === 'scheduled') {
-                html += `<tr><th>开始时间</th><td>${trigger.start_time || '-'}</td></tr>`;
-                html += `<tr><th>结束时间</th><td>${trigger.end_time || '-'}</td></tr>`;
-            } else if (trigger.trigger_type === 'interval') {
-                html += `<tr><th>间隔分钟</th><td>${trigger.interval_minutes ?? '-'} 分钟</td></tr>`;
-            } else if (trigger.trigger_type === 'random_time') {
-                html += `<tr><th>随机范围</th><td>${trigger.random_start_time || '-'} ~ ${trigger.random_end_time || '-'}</td></tr>`;
-            }
+	function filterTasks() {
+		const searchText = document.getElementById('task-search').value.trim().toLowerCase();
+		const statusFilter = document.getElementById('status-filter').value;
+		const groupFilter = document.getElementById('group-filter').value;
 
-            html += `
-                        </table>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-12">
-                        <h6>执行配置</h6>
-                        <table class="table table-sm">
-                            <tr><th>执行命令</th><td><code>${escapeHtml(taskConfig.main_command)}</code></td></tr>
-                            <tr><th>启用ADB唤醒</th><td>${taskConfig.enable_adb_wakeup ? '是' : '否'}</td></tr>
-                            <tr><th>ADB设备ID</th><td>${escapeHtml(taskConfig.adb_device_id) || '-'}</td></tr>
-                            <tr><th>全局日志</th><td>${taskConfig.enable_global_log ? '是' : '否'}</td></tr>
-                            <tr><th>临时日志</th><td>${taskConfig.enable_temp_log ? '是' : '否'}</td></tr>
-                        </table>
-                    </div>
-                </div>
-            `;
+		filteredTasks = tasks.filter(task => {
+			const name = (task.name || '').toLowerCase();
+			const description = (task.description || '').toLowerCase();
+			const matchesSearch = !searchText || name.includes(searchText) || description.includes(searchText);
+			const matchesStatus = !statusFilter || task.status === statusFilter;
+			const matchesGroup = !groupFilter || task.resource_group === groupFilter;
+			return matchesSearch && matchesStatus && matchesGroup;
+		});
 
-            document.getElementById('task-detail-content').innerHTML = html;
+		updateTasksTable();
+	}
 
-            const runBtn = document.getElementById('run-task-btn');
-            const cancelBtn = document.getElementById('cancel-task-btn');
+	function clearFilters() {
+		document.getElementById('task-search').value = '';
+		document.getElementById('status-filter').value = '';
+		document.getElementById('group-filter').value = '';
+		filteredTasks = tasks;
+		updateTasksTable();
+	}
 
-            if (status === 'running') {
-                runBtn.style.display = 'none';
-                cancelBtn.style.display = 'inline-block';
-            } else if (systemStatus.mode === 'single_task') {
-                runBtn.style.display = 'inline-block';
-                cancelBtn.style.display = 'none';
-            } else {
-                runBtn.style.display = 'none';
-                cancelBtn.style.display = 'none';
-            }
+	function resetTaskForm() {
+		editingTaskId = null;
+		document.getElementById('taskModalLabel').textContent = '创建任务';
+		taskFormElement.reset();
 
-            const modal = new bootstrap.Modal(document.getElementById('taskDetailModal'));
-            modal.show();
+		document.getElementById('taskPriority').value = 5;
+		document.getElementById('triggerType').value = 'scheduled';
+		document.getElementById('scheduledStart').value = '09:00';
+		document.getElementById('scheduledEnd').value = '18:00';
+		document.getElementById('intervalMinutes').value = 30;
+		document.getElementById('randomStart').value = '09:00';
+		document.getElementById('randomEnd').value = '18:00';
 
-        } catch (error) {
-            console.error('加载任务详情失败:', error);
-        }
-    }
+		document.getElementById('taskEnabled').checked = true;
+		document.getElementById('enableAdbWakeup').checked = false;
+		document.getElementById('enableGlobalLog').checked = true;
+		document.getElementById('enableTempLog').checked = false;
+		document.getElementById('pushNotificationEnabled').checked = false;
+		document.getElementById('keywordMonitoringEnabled').checked = false;
 
-    // 执行任务
-    async function runTask(taskId) {
-        if (systemStatus.mode !== 'single_task') {
-            showToast('必须在单任务模式下才能手动执行任务', 'warning');
-            return;
-        }
+		toggleAdbConfig();
+		showTriggerConfig('scheduled');
+		togglePushNotificationConfig();
+		syncKeywordSectionVisibility();
+		toggleKeywordConfig();
 
-        try {
-            await apiRequest(`/api/tasks/${taskId}/run`, { method: 'POST' });
-            showToast('任务开始执行', 'success');
-            loadTasks();
-        } catch (error) {
-            console.error('执行任务失败:', error);
-        }
-    }
+		const groupSelect = document.getElementById('resourceGroupSelect');
+		if (groupSelect.options.length > 0) {
+			groupSelect.selectedIndex = 0;
+		}
+	}
 
-    // 取消任务
-    async function cancelTask(taskId) {
-        if (confirm('确定要取消这个任务吗？')) {
-            try {
-                await apiRequest(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
-                showToast('任务已取消', 'success');
-                loadTasks();
-            } catch (error) {
-                console.error('取消任务失败:', error);
-            }
-        }
-    }
+	function showTriggerConfig(type) {
+		document.querySelectorAll('.trigger-config').forEach(section => {
+			section.classList.add('d-none');
+		});
 
-    // 删除任务
-    async function deleteTask(taskId) {
-        if (confirm('确定要删除这个任务吗？此操作不可恢复。')) {
-            try {
-                await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
-                showToast('任务已删除', 'success');
-                loadTasks();
-            } catch (error) {
-                console.error('删除任务失败:', error);
-            }
-        }
-    }
+		if (type === 'scheduled') {
+			document.getElementById('scheduledConfig').classList.remove('d-none');
+		} else if (type === 'interval') {
+			document.getElementById('intervalConfig').classList.remove('d-none');
+		} else if (type === 'random_time') {
+			document.getElementById('randomTimeConfig').classList.remove('d-none');
+		}
+	}
 
-    // 编辑任务
-    function editTask(taskId) {
-        // 从任务列表中找到对应任务并填充表单
-        const task = tasks.find(t => t.id === taskId);
-        if (task) {
-            populateTaskForm(task);
-            document.getElementById('taskModalLabel').textContent = '编辑任务';
-            const modal = new bootstrap.Modal(document.getElementById('taskModal'));
-            modal.show();
-        }
-    }
+	function toggleAdbConfig() {
+		const enableAdb = document.getElementById('enableAdbWakeup').checked;
+		document.getElementById('adbConfigSection').classList.toggle('d-none', !enableAdb);
+		if (!enableAdb) {
+			document.getElementById('adbDeviceId').value = '';
+		}
+	}
 
-    // 创建新任务
-    function createTask() {
-        resetTaskForm();
-        document.getElementById('taskModalLabel').textContent = '创建任务';
-        const modal = new bootstrap.Modal(document.getElementById('taskModal'));
-        modal.show();
-    }
+	function togglePushNotificationConfig() {
+		const enabled = document.getElementById('pushNotificationEnabled').checked;
+		document.getElementById('pushNotificationConfig').classList.toggle('d-none', !enabled);
+	}
 
-    // 重置任务表单
-    function resetTaskForm() {
-        document.getElementById('taskForm').reset();
-        document.getElementById('taskId').value = '';
-        document.getElementById('taskEnabled').checked = true;
-        showTriggerConfig('scheduled');
-        
-        // 隐藏所有通知配置
-        showNotificationConfig('success', false);
-        showNotificationConfig('failure', false);
-        showNotificationConfig('keywordMonitoring', false);
-        
-        // 隐藏Cron表达式
-        document.getElementById('cronExpressionDiv').style.display = 'none';
-        document.getElementById('useCronExpression').checked = false;
-    }
+	function syncKeywordSectionVisibility() {
+		const enableTemp = document.getElementById('enableTempLog').checked;
+		const section = document.getElementById('keywordSection');
+		section.classList.toggle('d-none', !enableTemp);
+		if (!enableTemp) {
+			document.getElementById('keywordMonitoringEnabled').checked = false;
+			toggleKeywordConfig();
+		}
+	}
 
-    // 填充任务表单
-    function populateTaskForm(task) {
-        document.getElementById('taskId').value = task.id;
-        document.getElementById('taskName').value = task.name;
-        document.getElementById('taskDescription').value = task.description || '';
-        document.getElementById('taskType').value = task.type || 'maa_task';
-        document.getElementById('triggerType').value = task.trigger_type;
-        document.getElementById('taskPriority').value = task.priority;
-        document.getElementById('resourceGroup').value = task.resource_group || 'default';
-        document.getElementById('taskEnabled').checked = task.enabled;
-        
-        // 根据触发类型显示相应配置
-        showTriggerConfig(task.trigger_type);
-        
-        // 填充触发器配置
-        if (task.trigger_type === 'cron') {
-            document.getElementById('cronExpression').value = task.cron_expression || '';
-        } else if (task.trigger_type === 'interval') {
-            document.getElementById('intervalTime').value = task.interval_time || 60;
-            document.getElementById('intervalUnit').value = task.interval_unit || 'minutes';
-        } else if (task.trigger_type === 'random') {
-            document.getElementById('minInterval').value = task.min_interval || 30;
-            document.getElementById('maxInterval').value = task.max_interval || 120;
-        }
-        
-        // 填充执行配置
-        document.getElementById('maaConfig').value = task.maa_config || '';
-        document.getElementById('taskArgs').value = task.task_args || '';
-        document.getElementById('allowConcurrent').checked = task.allow_concurrent || false;
-        document.getElementById('notifyOnComplete').checked = task.notify_on_complete || false;
-        
-        // 填充高级配置
-        document.getElementById('taskTimeout').value = task.timeout || 3600;
-        document.getElementById('retryCount').value = task.retry_count || 0;
-        document.getElementById('preCommands').value = task.pre_commands ? task.pre_commands.join('\n') : '';
-        document.getElementById('postCommands').value = task.post_commands ? task.post_commands.join('\n') : '';
-    }
+	function toggleKeywordConfig() {
+		const enabled = document.getElementById('keywordMonitoringEnabled').checked;
+		document.getElementById('keywordConfig').classList.toggle('d-none', !enabled);
+	}
 
-    // 显示对应的触发器配置
-    function showTriggerConfig(triggerType) {
-        const configs = document.querySelectorAll('.trigger-config');
-        configs.forEach(config => {
-            config.style.display = 'none';
-        });
-        
-        const targetConfig = document.getElementById(triggerType + 'Config');
-        if (targetConfig) {
-            targetConfig.style.display = 'block';
-        }
-    }
-    
-    // 显示通知配置
-    function showNotificationConfig(type, show) {
-        const configDiv = document.getElementById(type + 'NotificationConfig');
-        if (configDiv) {
-            configDiv.style.display = show ? 'block' : 'none';
-        }
-    }
+	function buildPostTaskConfig() {
+		const pushEnabled = document.getElementById('pushNotificationEnabled').checked;
+		const pushConfig = {
+			enabled: pushEnabled,
+			on_success: pushEnabled ? document.getElementById('pushNotifySuccess').checked : false,
+			on_failure: pushEnabled ? document.getElementById('pushNotifyFailure').checked : false
+		};
 
-    // 保存任务
-    async function saveTask() {
-        const form = document.getElementById('taskForm');
-        const formData = new FormData(form);
-        const taskData = {};
-        
-        // 转换表单数据
-        for (const [key, value] of formData.entries()) {
-            if (value !== '') {
-                if (key.includes('_') && (key.endsWith('count') || key.endsWith('time') || key.endsWith('interval') || key === 'priority' || key === 'timeout')) {
-                    taskData[key] = parseInt(value);
-                } else if (key === 'enabled' || key === 'allow_concurrent' || key === 'notify_on_complete') {
-                    taskData[key] = true;
-                } else {
-                    taskData[key] = value;
-                }
-            }
-        }
-        
-        // 处理未选中的复选框
-        const checkboxes = ['enabled', 'allow_concurrent', 'notify_on_complete'];
-        checkboxes.forEach(checkbox => {
-            if (!formData.has(checkbox)) {
-                taskData[checkbox] = false;
-            }
-        });
-        
-        // 处理命令列表
-        if (taskData.pre_commands) {
-            taskData.pre_commands = taskData.pre_commands.split('\n').filter(cmd => cmd.trim());
-        }
-        if (taskData.post_commands) {
-            taskData.post_commands = taskData.post_commands.split('\n').filter(cmd => cmd.trim());
-        }
-        
-        try {
-            const taskId = document.getElementById('taskId').value;
-            const url = taskId ? `/api/tasks/${taskId}` : '/api/tasks';
-            const method = taskId ? 'PUT' : 'POST';
-            
-            await apiRequest(url, {
-                method: method,
-                body: JSON.stringify(taskData)
-            });
-            
-            showToast(taskId ? '任务更新成功' : '任务创建成功', 'success');
-            bootstrap.Modal.getInstance(document.getElementById('taskModal')).hide();
-            loadTasks();
-        } catch (error) {
-            console.error('保存任务失败:', error);
-        }
-    }
+		if (pushEnabled) {
+			const title = document.getElementById('pushTitle').value.trim();
+			const tag = document.getElementById('pushTag').value.trim();
+			const content = document.getElementById('pushContent').value.trim();
+			if (title) pushConfig.title = title;
+			if (tag) pushConfig.tag = tag;
+			if (content) pushConfig.content = content;
+		}
 
-    // 显示 Cron 帮助
-    function showCronHelper() {
-        const modal = new bootstrap.Modal(document.getElementById('cronHelperModal'));
-        modal.show();
-    }
+		const enableTemp = document.getElementById('enableTempLog').checked;
+		const keywordEnabled = enableTemp && document.getElementById('keywordMonitoringEnabled').checked;
 
-    // 设置 Cron 表达式
-    function setCronExpression(expression) {
-        document.getElementById('cronExpression').value = expression;
-        bootstrap.Modal.getInstance(document.getElementById('cronHelperModal')).hide();
-    }
+		const rawKeywords = document.getElementById('keywordList').value;
+		const keywordList = rawKeywords
+			.split(/[\n,]/)
+			.map(item => item.trim())
+			.filter(Boolean);
 
-    // 切换ADB选项显示
-    function toggleAdbOption() {
-        const taskType = document.getElementById('taskType').value;
-        const adbOption = document.getElementById('adbWakeupOption');
-        if (taskType === 'maa') {
-            adbOption.style.display = 'block';
-        } else {
-            adbOption.style.display = 'none';
-            document.getElementById('enableAdbWakeup').checked = false;
-            toggleEmulatorConfig();
-        }
-    }
+		let keywordNotification = null;
+		if (keywordEnabled) {
+			keywordNotification = {};
+			const title = document.getElementById('keywordTitle').value.trim();
+			const tag = document.getElementById('keywordTag').value.trim();
+			const content = document.getElementById('keywordContent').value.trim();
+			if (title) keywordNotification.title = title;
+			if (tag) keywordNotification.tag = tag;
+			if (content) keywordNotification.content = content;
+			if (!Object.keys(keywordNotification).length) {
+				keywordNotification = null;
+			}
+		}
 
-    // 切换模拟器配置显示
-    function toggleEmulatorConfig() {
-        const enableAdb = document.getElementById('enableAdbWakeup').checked;
-        const emulatorConfig = document.getElementById('emulatorConfig');
-        emulatorConfig.style.display = enableAdb ? 'block' : 'none';
-    }
+		return {
+			log_keywords: keywordEnabled ? keywordList : [],
+			keyword_notification: keywordEnabled ? keywordNotification : null,
+			push_notification: pushConfig
+		};
+	}
 
-    // 切换触发器类型
-    function changeTriggerType() {
-        const triggerType = document.getElementById('triggerType').value;
-        showTriggerConfig(triggerType);
-    }
+	function buildTriggerConfig() {
+		const type = document.getElementById('triggerType').value;
+		const trigger = { trigger_type: type };
 
-    // 切换Cron表达式显示
-    function toggleCronExpression() {
-        const useCron = document.getElementById('useCronExpression').checked;
-        const timeRangeDiv = document.getElementById('timeRangeDiv');
-        const cronExpressionDiv = document.getElementById('cronExpressionDiv');
-        
-        if (useCron) {
-            timeRangeDiv.style.display = 'none';
-            cronExpressionDiv.style.display = 'block';
-        } else {
-            timeRangeDiv.style.display = 'block';
-            cronExpressionDiv.style.display = 'none';
-        }
-    }
+		if (type === 'scheduled') {
+			trigger.start_time = document.getElementById('scheduledStart').value || null;
+			trigger.end_time = document.getElementById('scheduledEnd').value || null;
+		} else if (type === 'interval') {
+			const interval = Number(document.getElementById('intervalMinutes').value);
+			trigger.interval_minutes = Number.isFinite(interval) && interval > 0 ? interval : null;
+		} else if (type === 'random_time') {
+			trigger.random_start_time = document.getElementById('randomStart').value || null;
+			trigger.random_end_time = document.getElementById('randomEnd').value || null;
+		}
 
-    // 切换临时日志选项
-    function toggleTempLogOptions() {
-        const enableTempLog = document.getElementById('enableTempLog').checked;
-        const tempLogOptions = document.getElementById('tempLogOptions');
-        tempLogOptions.style.display = enableTempLog ? 'block' : 'none';
-        
-        if (!enableTempLog) {
-            document.getElementById('enableKeywordMonitoring').checked = false;
-            toggleKeywordConfig();
-        }
-    }
+		return trigger;
+	}
 
-    // 切换通知配置显示
-    function toggleNotificationConfig(type) {
-        const checkbox = document.getElementById(`notifyOn${type.charAt(0).toUpperCase() + type.slice(1)}`);
-        const configDiv = document.getElementById(`${type}NotificationConfig`);
-        configDiv.style.display = checkbox.checked ? 'block' : 'none';
-    }
+	function collectTaskPayload() {
+		const enableAdb = document.getElementById('enableAdbWakeup').checked;
+		const adbDeviceId = document.getElementById('adbDeviceId').value.trim();
 
-    // 切换关键词配置显示
-    function toggleKeywordConfig() {
-        const enableKeyword = document.getElementById('enableKeywordMonitoring').checked;
-        const keywordConfig = document.getElementById('keywordMonitoringConfig');
-        keywordConfig.style.display = enableKeyword ? 'block' : 'none';
-    }
+		const payload = {
+			name: document.getElementById('taskName').value.trim(),
+			description: document.getElementById('taskDescription').value.trim(),
+			enabled: document.getElementById('taskEnabled').checked,
+			priority: Number(document.getElementById('taskPriority').value) || 5,
+			resource_group: document.getElementById('resourceGroupSelect').value,
+			main_command: document.getElementById('mainCommand').value.trim(),
+			enable_adb_wakeup: enableAdb,
+			adb_device_id: enableAdb && adbDeviceId ? adbDeviceId : null,
+			enable_global_log: document.getElementById('enableGlobalLog').checked,
+			enable_temp_log: document.getElementById('enableTempLog').checked,
+			trigger: buildTriggerConfig(),
+			post_task: buildPostTaskConfig()
+		};
 
-    // 初始化页面
-    document.addEventListener('DOMContentLoaded', function() {
-        loadTasks();
-        loadResourceGroups();
-        
-        // 绑定ADB唤醒选项变化事件
-        document.getElementById('enableAdbWakeup').addEventListener('change', toggleEmulatorConfig);
+		if (editingTaskId) {
+			payload.id = editingTaskId;
+		}
 
-        // 绑定过滤器事件
-        document.getElementById('task-search').addEventListener('input', filterTasks);
-        document.getElementById('status-filter').addEventListener('change', filterTasks);
-        document.getElementById('group-filter').addEventListener('change', filterTasks);
+		return payload;
+	}
 
-        // 绑定新任务模态框的触发器类型变化事件
-        document.getElementById('triggerType').addEventListener('change', function() {
-            showTriggerConfig(this.value);
-        });
-        
-        // 绑定Cron表达式选择框
-        document.getElementById('useCronExpression').addEventListener('change', function() {
-            document.getElementById('cronExpressionDiv').style.display = this.checked ? 'block' : 'none';
-        });
-        
-        // 绑定通知配置显示控制
-        document.getElementById('notifyOnSuccess').addEventListener('change', function() {
-            showNotificationConfig('success', this.checked);
-        });
-        
-        document.getElementById('notifyOnFailure').addEventListener('change', function() {
-            showNotificationConfig('failure', this.checked);
-        });
-        
-        document.getElementById('keywordNotification').addEventListener('change', function() {
-            showNotificationConfig('keywordMonitoring', this.checked);
-        });
+	async function saveTask() {
+		const submitButton = document.getElementById('saveTaskBtn');
+		const spinner = document.getElementById('saveSpinner');
+		submitButton.disabled = true;
+		spinner.classList.remove('d-none');
 
-        // 触发器类型切换
-        document.getElementById('trigger-type-select').addEventListener('change', function() {
-            const triggerType = this.value;
-            document.querySelectorAll('.trigger-config').forEach(el => el.style.display = 'none');
-            document.getElementById(`${triggerType}-config`).style.display = 'block';
-        });
+		try {
+			const payload = collectTaskPayload();
+			if (!payload.name) {
+				showToast('任务名称不能为空', 'warning');
+				return;
+			}
+			if (!payload.main_command) {
+				showToast('执行命令不能为空', 'warning');
+				return;
+			}
 
-        // 模拟器任务切换
-        document.getElementById('is-emulator-task').addEventListener('change', function() {
-            document.getElementById('emulator-config').style.display = this.checked ? 'block' : 'none';
-        });
+			const isEdit = Boolean(editingTaskId);
+			const url = isEdit ? `/api/tasks/${editingTaskId}` : '/api/tasks';
+			const method = isEdit ? 'PUT' : 'POST';
 
-        // 任务表单提交
-        document.getElementById('task-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const taskData = {};
-            
-            for (let [key, value] of formData.entries()) {
-                if (key === 'priority' || key === 'interval_seconds') {
-                    taskData[key] = parseInt(value);
-                } else if (key === 'is_emulator_task' || key === 'enable_global_log' || 
-                          key === 'enable_temp_log' || key === 'notify_on_success' || 
-                          key === 'notify_on_failure') {
-                    taskData[key] = true;  // 只有选中的checkbox会被发送
-                } else {
-                    taskData[key] = value;
-                }
-            }
-            
-            // 设置未选中的checkbox为false
-            ['is_emulator_task', 'enable_global_log', 'enable_temp_log', 'notify_on_success', 'notify_on_failure'].forEach(field => {
-                if (!(field in taskData)) {
-                    taskData[field] = false;
-                }
-            });
+			await apiRequest(url, {
+				method,
+				body: JSON.stringify(payload)
+			});
 
-            try {
-                await apiRequest('/api/tasks', {
-                    method: 'POST',
-                    body: JSON.stringify(taskData)
-                });
-                
-                showToast('任务创建成功', 'success');
-                
-                // 关闭模态框并重置表单
-                bootstrap.Modal.getInstance(document.getElementById('createTaskModal')).hide();
-                this.reset();
-                
-                loadTasks();
-                
-            } catch (error) {
-                console.error('创建任务失败:', error);
-            }
-        });
+			showToast(isEdit ? '任务更新成功' : '任务创建成功', 'success');
+			taskModalInstance.hide();
+			await loadTasks();
+		} catch (error) {
+			console.error('保存任务失败:', error);
+			showToast(error.message || '保存任务失败', 'danger');
+		} finally {
+			spinner.classList.add('d-none');
+			submitButton.disabled = false;
+		}
+	}
 
-        // 任务详情按钮事件
-        document.getElementById('run-task-btn').addEventListener('click', function() {
-            if (currentTaskId) {
-                runTask(currentTaskId);
-                bootstrap.Modal.getInstance(document.getElementById('taskDetailModal')).hide();
-            }
-        });
+	async function viewTask(taskId) {
+		const detailModalElement = document.getElementById('taskDetailModal');
+		const modal = bootstrap.Modal.getOrCreateInstance(detailModalElement);
+		const detailContainer = document.getElementById('task-detail-content');
 
-        document.getElementById('cancel-task-btn').addEventListener('click', function() {
-            if (currentTaskId) {
-                cancelTask(currentTaskId);
-                bootstrap.Modal.getInstance(document.getElementById('taskDetailModal')).hide();
-            }
-        });
+		detailContainer.innerHTML = `
+			<div class="text-center text-muted py-4">
+				<div class="spinner-border text-primary" role="status"></div>
+				<p class="mt-3 mb-0">加载中...</p>
+			</div>
+		`;
 
-        // 定时刷新
-        setInterval(loadTasks, 10000);
-    });
+		try {
+			const taskConfig = await apiRequest(`/api/tasks/${taskId}`);
+			currentTaskId = taskId;
+			renderTaskDetail(taskConfig);
+			updateTaskDetailActions(taskId);
+			modal.show();
+		} catch (error) {
+			console.error('加载任务详情失败:', error);
+			showToast(error.message || '加载任务详情失败', 'danger');
+		}
+	}
+
+	function renderTaskDetail(taskConfig) {
+		const listTask = tasks.find(task => task.id === taskConfig.id);
+		const status = listTask ? listTask.status : 'pending';
+		const statusBadge = statusColors[status] || 'secondary';
+		const statusText = statusTexts[status] || status;
+		const nextRunTime = listTask ? formatDateTime(listTask.next_run_time) : '-';
+		const trigger = taskConfig.trigger || {};
+		const postTask = taskConfig.post_task || {};
+		const push = postTask.push_notification || {};
+		const keywords = postTask.log_keywords || [];
+		const keywordNotification = postTask.keyword_notification || {};
+
+		const triggerDetails = (() => {
+			if (trigger.trigger_type === 'scheduled') {
+				return `
+					<tr><th>开始时间</th><td>${escapeHtml(trigger.start_time || '-')}</td></tr>
+					<tr><th>结束时间</th><td>${escapeHtml(trigger.end_time || '-')}</td></tr>
+				`;
+			}
+			if (trigger.trigger_type === 'interval') {
+				return `<tr><th>间隔分钟</th><td>${trigger.interval_minutes ?? '-'}</td></tr>`;
+			}
+			if (trigger.trigger_type === 'random_time') {
+				return `<tr><th>随机区间</th><td>${escapeHtml(trigger.random_start_time || '-')} ~ ${escapeHtml(trigger.random_end_time || '-')}</td></tr>`;
+			}
+			return '';
+		})();
+
+		const keywordBadges = keywords.length
+			? keywords.map(word => `<span class="badge bg-warning text-dark me-1 mb-1">${escapeHtml(word)}</span>`).join('')
+			: '<span class="text-muted">未配置关键词</span>';
+
+		const detailHtml = `
+			<div class="row g-4">
+				<div class="col-md-6">
+					<h6 class="text-muted mb-2">基本信息</h6>
+					<table class="table table-sm">
+						<tr><th>名称</th><td>${escapeHtml(taskConfig.name)}</td></tr>
+						<tr><th>描述</th><td>${escapeHtml(taskConfig.description) || '-'}</td></tr>
+						<tr><th>状态</th><td><span class="badge bg-${statusBadge}">${statusText}</span></td></tr>
+						<tr><th>下次执行</th><td>${nextRunTime}</td></tr>
+						<tr><th>优先级</th><td>${taskConfig.priority}</td></tr>
+						<tr><th>资源分组</th><td>${escapeHtml(taskConfig.resource_group || '-')}</td></tr>
+						<tr><th>启用</th><td>${taskConfig.enabled ? '是' : '否'}</td></tr>
+					</table>
+				</div>
+				<div class="col-md-6">
+					<h6 class="text-muted mb-2">触发配置</h6>
+					<table class="table table-sm">
+						<tr><th>触发类型</th><td>${triggerTypeTexts[trigger.trigger_type] || trigger.trigger_type || '-'}</td></tr>
+						${triggerDetails}
+					</table>
+				</div>
+				<div class="col-md-6">
+					<h6 class="text-muted mb-2">执行配置</h6>
+					<table class="table table-sm">
+						<tr><th>执行命令</th><td><code>${escapeHtml(taskConfig.main_command)}</code></td></tr>
+						<tr><th>ADB 唤醒</th><td>${taskConfig.enable_adb_wakeup ? '是' : '否'}</td></tr>
+						<tr><th>ADB 设备</th><td>${escapeHtml(taskConfig.adb_device_id) || '-'}</td></tr>
+						<tr><th>全局日志</th><td>${taskConfig.enable_global_log ? '启用' : '关闭'}</td></tr>
+						<tr><th>临时日志</th><td>${taskConfig.enable_temp_log ? '启用' : '关闭'}</td></tr>
+					</table>
+				</div>
+				<div class="col-md-6">
+					<h6 class="text-muted mb-2">后置通知</h6>
+					<table class="table table-sm">
+						<tr><th>推送通知</th><td>${push.enabled ? '启用' : '关闭'}</td></tr>
+						<tr><th>成功时发送</th><td>${push.on_success ? '是' : '否'}</td></tr>
+						<tr><th>失败时发送</th><td>${push.on_failure ? '是' : '否'}</td></tr>
+						<tr><th>标题</th><td>${escapeHtml(push.title) || '-'}</td></tr>
+						<tr><th>标签</th><td>${escapeHtml(push.tag) || '-'}</td></tr>
+						<tr><th>内容</th><td>${escapeHtml(push.content) || '-'}</td></tr>
+					</table>
+					<h6 class="text-muted mb-2">关键词监控</h6>
+					<div class="mb-2">${keywordBadges}</div>
+					<table class="table table-sm">
+						<tr><th>标题</th><td>${escapeHtml(keywordNotification.title) || '-'}</td></tr>
+						<tr><th>标签</th><td>${escapeHtml(keywordNotification.tag) || '-'}</td></tr>
+						<tr><th>内容</th><td>${escapeHtml(keywordNotification.content) || '-'}</td></tr>
+					</table>
+				</div>
+			</div>
+		`;
+
+		document.getElementById('task-detail-content').innerHTML = detailHtml;
+	}
+
+	function updateTaskDetailActions(taskId) {
+		const listTask = tasks.find(task => task.id === taskId);
+		const status = listTask ? listTask.status : 'pending';
+		const mode = systemStatus?.mode || 'scheduler';
+
+		const runBtn = document.getElementById('run-task-btn');
+		const cancelBtn = document.getElementById('cancel-task-btn');
+
+		if (status === 'running') {
+			runBtn.style.display = 'none';
+			cancelBtn.style.display = 'inline-block';
+		} else if (mode === 'single_task') {
+			runBtn.style.display = 'inline-block';
+			cancelBtn.style.display = 'none';
+		} else {
+			runBtn.style.display = 'none';
+			cancelBtn.style.display = 'none';
+		}
+	}
+
+	async function runTask(taskId) {
+		if (systemStatus?.mode !== 'single_task') {
+			showToast('需要在单任务模式下才能手动执行任务', 'warning');
+			return;
+		}
+
+		try {
+			await apiRequest(`/api/tasks/${taskId}/run`, { method: 'POST' });
+			showToast('任务已开始执行', 'success');
+			await loadTasks();
+		} catch (error) {
+			console.error('执行任务失败:', error);
+			showToast(error.message || '执行任务失败', 'danger');
+		}
+	}
+
+	async function cancelTask(taskId) {
+		if (!confirm('确定要取消该任务吗？')) {
+			return;
+		}
+		try {
+			await apiRequest(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+			showToast('取消任务请求已发送', 'success');
+			await loadTasks();
+		} catch (error) {
+			console.error('取消任务失败:', error);
+			showToast(error.message || '取消任务失败', 'danger');
+		}
+	}
+
+	async function deleteTask(taskId) {
+		if (!confirm('删除后不可恢复，确定要删除该任务吗？')) {
+			return;
+		}
+
+		try {
+			await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
+			showToast('任务已删除', 'success');
+			await loadTasks();
+		} catch (error) {
+			console.error('删除任务失败:', error);
+			showToast(error.message || '删除任务失败', 'danger');
+		}
+	}
+
+	async function editTask(taskId) {
+		try {
+			const taskConfig = await apiRequest(`/api/tasks/${taskId}`);
+			populateTaskForm(taskConfig);
+			document.getElementById('taskModalLabel').textContent = '编辑任务';
+			taskModalInstance.show();
+		} catch (error) {
+			console.error('加载任务配置失败:', error);
+			showToast(error.message || '加载任务配置失败', 'danger');
+		}
+	}
+
+	function populateTaskForm(taskConfig) {
+		editingTaskId = taskConfig.id;
+		document.getElementById('taskId').value = taskConfig.id;
+		document.getElementById('taskName').value = taskConfig.name || '';
+		document.getElementById('taskDescription').value = taskConfig.description || '';
+		document.getElementById('taskEnabled').checked = Boolean(taskConfig.enabled);
+		document.getElementById('taskPriority').value = taskConfig.priority;
+
+		ensureResourceGroupOption(taskConfig.resource_group);
+		document.getElementById('resourceGroupSelect').value = taskConfig.resource_group || 'default';
+
+		document.getElementById('mainCommand').value = taskConfig.main_command || '';
+		document.getElementById('enableAdbWakeup').checked = Boolean(taskConfig.enable_adb_wakeup);
+		document.getElementById('adbDeviceId').value = taskConfig.adb_device_id || '';
+		document.getElementById('enableGlobalLog').checked = Boolean(taskConfig.enable_global_log);
+		document.getElementById('enableTempLog').checked = Boolean(taskConfig.enable_temp_log);
+
+		const trigger = taskConfig.trigger || { trigger_type: 'scheduled' };
+		const triggerType = trigger.trigger_type || 'scheduled';
+		document.getElementById('triggerType').value = triggerType;
+		showTriggerConfig(triggerType);
+
+		document.getElementById('scheduledStart').value = trigger.start_time || '09:00';
+		document.getElementById('scheduledEnd').value = trigger.end_time || '18:00';
+		document.getElementById('intervalMinutes').value = trigger.interval_minutes ?? 30;
+		document.getElementById('randomStart').value = trigger.random_start_time || '09:00';
+		document.getElementById('randomEnd').value = trigger.random_end_time || '18:00';
+
+		const postTask = taskConfig.post_task || {};
+		const push = postTask.push_notification || {};
+		document.getElementById('pushNotificationEnabled').checked = Boolean(push.enabled);
+		document.getElementById('pushNotifySuccess').checked = push.on_success !== false;
+		document.getElementById('pushNotifyFailure').checked = push.on_failure !== false;
+		document.getElementById('pushTitle').value = push.title || '';
+		document.getElementById('pushTag').value = push.tag || '';
+		document.getElementById('pushContent').value = push.content || '';
+
+		const keywords = postTask.log_keywords || [];
+		document.getElementById('keywordList').value = keywords.join(', ');
+		const keywordNotification = postTask.keyword_notification || {};
+		const keywordEnabled = Boolean(keywords.length || Object.keys(keywordNotification).length);
+		document.getElementById('keywordMonitoringEnabled').checked = keywordEnabled;
+		document.getElementById('keywordTitle').value = keywordNotification.title || '';
+		document.getElementById('keywordTag').value = keywordNotification.tag || '';
+		document.getElementById('keywordContent').value = keywordNotification.content || '';
+
+		toggleAdbConfig();
+		togglePushNotificationConfig();
+		syncKeywordSectionVisibility();
+		toggleKeywordConfig();
+	}
+
+	function createTask() {
+		resetTaskForm();
+		taskModalInstance.show();
+	}
+
+	document.addEventListener('DOMContentLoaded', () => {
+		taskFormElement = document.getElementById('taskForm');
+		taskModalInstance = new bootstrap.Modal(document.getElementById('taskModal'));
+
+		document.getElementById('create-task-btn').addEventListener('click', createTask);
+		document.getElementById('refresh-task-btn').addEventListener('click', loadTasks);
+		document.getElementById('clear-filter-btn').addEventListener('click', clearFilters);
+
+		document.getElementById('task-search').addEventListener('input', filterTasks);
+		document.getElementById('status-filter').addEventListener('change', filterTasks);
+		document.getElementById('group-filter').addEventListener('change', filterTasks);
+
+		document.getElementById('triggerType').addEventListener('change', event => {
+			showTriggerConfig(event.target.value);
+		});
+		document.getElementById('enableAdbWakeup').addEventListener('change', toggleAdbConfig);
+		document.getElementById('pushNotificationEnabled').addEventListener('change', togglePushNotificationConfig);
+		document.getElementById('enableTempLog').addEventListener('change', syncKeywordSectionVisibility);
+		document.getElementById('keywordMonitoringEnabled').addEventListener('change', toggleKeywordConfig);
+
+		document.getElementById('run-task-btn').addEventListener('click', () => {
+			if (currentTaskId) {
+				runTask(currentTaskId);
+			}
+		});
+		document.getElementById('cancel-task-btn').addEventListener('click', () => {
+			if (currentTaskId) {
+				cancelTask(currentTaskId);
+			}
+		});
+
+		document.getElementById('taskDetailModal').addEventListener('hidden.bs.modal', () => {
+			currentTaskId = null;
+		});
+
+		taskFormElement.addEventListener('submit', event => {
+			event.preventDefault();
+			if (!taskFormElement.reportValidity()) {
+				return;
+			}
+			saveTask();
+		});
+
+		resetTaskForm();
+		loadResourceGroups();
+		loadTasks();
+		setInterval(loadTasks, 15000);
+	});
 </script>
 {% endblock %}

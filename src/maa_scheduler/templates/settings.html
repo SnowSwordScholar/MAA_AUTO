@@ -533,7 +533,7 @@ localhost</textarea>
                                     <span class="badge ${badgeClass}">${runningCount}/${maxConcurrent}</span>
                                 </div>
                                 <div class="col-md-1">
-                                    <button class="btn btn-outline-danger btn-sm" onclick="removeResourceGroup('${escapeHtml(name)}')">
+                                    <button class="btn btn-outline-danger btn-sm" data-group-name="${escapeHtml(name)}" onclick="removeResourceGroup(this)">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
@@ -577,7 +577,7 @@ localhost</textarea>
         const newId = Date.now();
         
         const groupHtml = `
-            <div class="card mb-3" data-group="new-${newId}">
+                    <div class="card mb-3" data-group="new-${newId}">
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col-md-3">
@@ -596,7 +596,7 @@ localhost</textarea>
                             <span class="badge bg-secondary">新建</span>
                         </div>
                         <div class="col-md-1">
-                            <button class="btn btn-outline-danger btn-sm" onclick="removeResourceGroup('new-${newId}')">
+                                    <button class="btn btn-outline-danger btn-sm" data-group-name="new-${newId}" onclick="removeResourceGroup(this)">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -609,12 +609,21 @@ localhost</textarea>
     }
 
     // 移除资源分组
-    function removeResourceGroup(groupName) {
-        if (confirm('确定要删除这个资源分组吗？')) {
-            const groupElement = document.querySelector(`[data-group="${groupName}"]`);
-            if (groupElement) {
-                groupElement.remove();
-            }
+    function removeResourceGroup(buttonElement) {
+        if (!buttonElement) {
+            return;
+        }
+        const cardElement = buttonElement.closest('[data-group]');
+        if (!cardElement) {
+            return;
+        }
+        const groupName = cardElement.dataset.group;
+        if (groupName === 'default') {
+            showToast('默认资源组无法删除', 'warning');
+            return;
+        }
+        if (confirm(`确定要删除资源分组「${groupName}」吗？`)) {
+            cardElement.remove();
         }
     }
 

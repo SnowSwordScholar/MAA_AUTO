@@ -14,9 +14,9 @@ logging:
   max_size: 10MB
   backup_count: 5
 resource_groups:
-- name: gpu_intensive
-  description: GPU密集型任务
-  max_concurrent: 1
 - name: redroid
   description: ''
+  max_concurrent: 1
+- name: default
+  description: 默认资源组
   max_concurrent: 1
