@@ -414,8 +414,7 @@ class TaskScheduler:
         result = []
         for task in self.task_configs.values():
             status = self.executor.get_task_status(task.id)
-            job = self.scheduler.get_job(task.id)
-            next_run_time = job.next_run_time if job else None
+            next_run_time = self.get_task_next_run_time(task.id)
             
             result.append({
                 'id': task.id,
@@ -429,6 +428,23 @@ class TaskScheduler:
                 'next_run_time': next_run_time.isoformat() if next_run_time else None
             })
         return result
+
+    def get_task_next_run_time(self, task_id: str) -> Optional[datetime]:
+        job = self.scheduler.get_job(task_id)
+        if not job:
+            return None
+
+        next_time = getattr(job, "next_run_time", None)
+        if not next_time:
+            next_time = getattr(job, "next_fire_time", None)
+
+        if callable(next_time):
+            try:
+                next_time = next_time()
+            except TypeError:
+                next_time = None
+
+        return next_time
 
 # 全局调度器实例
 scheduler = TaskScheduler()

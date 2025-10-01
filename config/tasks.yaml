@@ -19,33 +19,27 @@ tasks:
       on_success: false
       on_failure: false
 - id: test-maa-task
-  name: MAA测试任务
-  description: MAA任务示例，带ADB唤醒功能
+  name: 肉鸽 Sami
+  description: ''
   enabled: true
   priority: 3
-  resource_group: camera
-  main_command: echo '模拟 MAA 任务执行' && sleep 5 && echo '任务完成, 但有一个error' && echo '任务真的完成了'
+  resource_group: redroid
+  main_command: adb -s localhost:35555 shell am start -n com.hypergryph.arknights/com.u8.sdk.U8UnityContext
+    ; sleep 3 ; /root/.cargo/bin/maa roguelike Sami -v
   enable_adb_wakeup: true
   adb_device_id: 127.0.0.1:35555
   enable_global_log: true
   enable_temp_log: true
   trigger:
-    trigger_type: random_time
-    random_start_time: 09:00
-    random_end_time: '18:00'
+    trigger_type: scheduled
+    start_time: 04:00
+    end_time: 03:00
   post_task:
-    log_keywords:
-    - error
-    - failed
-    - timeout
-    keyword_notification:
-      title: MAA任务异常
-      tag: maa_warning
-      content: 'MAA任务 {task_name} 检测到关键词: {keywords}'
+    log_keywords: []
     push_notification:
       enabled: true
       on_success: false
       on_failure: true
       title: MAA任务执行失败
-      tag: maa_error
+      tag: MAA
       content: MAA任务 {task_name} 执行失败，请检查设备状态

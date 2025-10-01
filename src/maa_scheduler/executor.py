@@ -196,7 +196,8 @@ class TaskExecutor:
         """运行ADB命令并处理错误"""
         adb_path = config_manager.get_config().app.adb_path or "adb"
         adb_exec = shlex.quote(adb_path)
-        full_command = f"{adb_exec} -s {device_id} {command}"
+        safe_device = shlex.quote(device_id)
+        full_command = f"{adb_exec} -s {safe_device} shell {command}"
         success, _, _, stderr = await self._run_shell_command(
             full_command,
             enable_global_log=False,

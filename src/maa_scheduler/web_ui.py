@@ -118,8 +118,7 @@ async def get_tasks_with_status():
     result = []
     for task in tasks:
         status = task_executor.get_task_status(task.id)
-        job = scheduler.scheduler.get_job(task.id)
-        next_run_time = job.next_run_time if job else None
+        next_run_time = scheduler.get_task_next_run_time(task.id)
         
         task_dict = task.dict()
         task_dict['status'] = status.value
