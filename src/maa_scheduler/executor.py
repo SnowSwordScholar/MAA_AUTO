@@ -5,7 +5,10 @@
 
 import asyncio
 import logging
+import os
 import shlex
+import signal
+import subprocess
 from collections import deque
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Deque, Any, List, Set
@@ -339,10 +342,17 @@ class TaskExecutor:
             except Exception as e:
                 logger.error(f"无法打开临时日志文件 {log_file}: {e}")
 
+        creation_args = {}
+        if os.name == "posix":
+            creation_args["preexec_fn"] = os.setsid
+        else:  # Windows 兼容
+            creation_args["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            **creation_args
         )
 
         async def read_stream(stream, stream_name, output_list):
@@ -369,14 +379,53 @@ class TaskExecutor:
             await process.wait()
         except asyncio.CancelledError:
             logger.warning(f"命令执行被取消: {command}")
-            process.kill()
-            await process.wait()
+            await self._terminate_process(process)
             raise
         finally:
             if log_writer:
                 log_writer.close()
 
         return process.returncode == 0, process.returncode, "\n".join(stdout_lines), "\n".join(stderr_lines)
+
+    async def _terminate_process(self, process: asyncio.subprocess.Process):
+        if process.returncode is not None:
+            return
+
+        termination_errors = []
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except Exception as exc:  # pragma: no cover - 记录意外错误
+                termination_errors.append(exc)
+        else:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            except Exception as exc:  # pragma: no cover
+                termination_errors.append(exc)
+
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+            await process.wait()
+        except Exception as exc:  # pragma: no cover
+            termination_errors.append(exc)
+
+        for exc in termination_errors:
+            logger.warning(f"终止进程时遇到异常: {exc}")
 
     def _create_temp_log_file(self, task_id: str) -> Path:
         log_dir = Path("logs/temp")

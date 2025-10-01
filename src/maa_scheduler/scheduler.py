@@ -173,16 +173,13 @@ class TaskScheduler:
     async def stop(self):
         if not self.is_running:
             return
-        
+
         logger.info("正在停止任务调度器")
         self.is_running = False
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
-        
-        running_task_ids = self.executor.get_running_tasks()
-        if running_task_ids:
-            logger.info(f"正在取消 {len(running_task_ids)} 个正在运行的任务...")
-            await asyncio.gather(*(self.executor.cancel_task(task_id) for task_id in running_task_ids))
+
+        await self._cancel_all_running_tasks(reason="stop")
 
         if self.worker_task:
             self.worker_task.cancel()
@@ -500,10 +497,10 @@ class TaskScheduler:
 
                 if not await self.resource_manager.can_start_task(task):
                     logger.info(f"资源不足，任务 '{task.name}' 重新加入队列")
-                    await asyncio.sleep(5) # 等待资源释放
-                    await self.task_queue.put(task, trigger_key) # 放回队列
+                    await asyncio.sleep(5)
+                    await self.task_queue.put(task, trigger_key)
                     continue
-                
+
                 await self.resource_manager.allocate_resource(task)
                 asyncio.create_task(self._execute_and_handle_completion(task_item))
         except asyncio.CancelledError:
@@ -725,6 +722,19 @@ class TaskScheduler:
             await self.task_queue.put(task, trigger_key)
         self.pending_window_tasks.clear()
 
+    async def _cancel_all_running_tasks(self, *, reason: str = "manual"):
+        running_task_ids = self.executor.get_running_tasks()
+        if not running_task_ids:
+            return
+        logger.info(
+            "正在取消 %d 个正在运行的任务 (原因: %s)...",
+            len(running_task_ids),
+            reason
+        )
+        await asyncio.gather(
+            *(self.executor.cancel_task(task_id, reason=reason) for task_id in running_task_ids)
+        )
+
     @staticmethod
     def _is_time_window_active(start_time: Optional[str], end_time: Optional[str]) -> bool:
         if not start_time:
@@ -789,7 +799,8 @@ class TaskScheduler:
 
         if mode == SchedulerMode.SINGLE_TASK:
             await self.task_queue.clear()
-            logger.info("调度器已切换到单任务模式，自动调度暂停")
+            await self._cancel_all_running_tasks(reason="mode-switch")
+            logger.info("调度器已切换到单任务模式，自动调度暂停并终止所有正在执行的任务")
         else:
             logger.info("调度器已切换到自动调度模式")
 
