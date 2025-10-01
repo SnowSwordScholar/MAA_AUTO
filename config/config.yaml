@@ -1,5 +1,5 @@
 app:
-  mode: scheduler
+  mode: single_task
   task_timeout: 3600
   notification:
     notify_on_startup: false

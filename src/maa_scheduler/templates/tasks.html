@@ -186,56 +186,86 @@
 					</div>
 
 					<div class="card mt-4">
-						<div class="card-header bg-light">
-							<i class="bi bi-clock me-2"></i> 调度配置
+						<div class="card-header bg-light d-flex justify-content-between align-items-center">
+							<div><i class="bi bi-clock me-2"></i> 调度配置</div>
+							<button type="button" class="btn btn-sm btn-outline-primary" id="addTriggerBtn">
+								<i class="bi bi-plus-circle"></i> 添加触发器
+							</button>
 						</div>
 						<div class="card-body">
-							<div class="row g-3 align-items-center mb-3">
-								<div class="col-md-4">
-									<label class="form-label">触发类型</label>
-									<select class="form-select" id="triggerType">
-										<option value="scheduled">定时执行</option>
-										<option value="interval">间隔执行</option>
-										<option value="random_time">随机时间</option>
-									</select>
-								</div>
-							</div>
-
-							<div id="scheduledConfig" class="trigger-config">
-								<div class="row g-3">
-									<div class="col-md-6">
-										<label class="form-label">开始时间</label>
-										<input type="time" class="form-control" id="scheduledStart" value="09:00">
-									</div>
-									<div class="col-md-6">
-										<label class="form-label">结束时间</label>
-										<input type="time" class="form-control" id="scheduledEnd" value="18:00">
-									</div>
-								</div>
-								<small class="text-muted">系统将在时间区间内按照调度策略执行任务。</small>
-							</div>
-
-							<div id="intervalConfig" class="trigger-config d-none">
-								<label class="form-label">间隔时间（分钟）</label>
-								<input type="number" class="form-control" id="intervalMinutes" min="1" value="30">
-								<small class="text-muted">任务完成后等待指定分钟数再次执行。</small>
-							</div>
-
-							<div id="randomTimeConfig" class="trigger-config d-none">
-								<div class="row g-3">
-									<div class="col-md-6">
-										<label class="form-label">随机开始时间</label>
-										<input type="time" class="form-control" id="randomStart" value="09:00">
-									</div>
-									<div class="col-md-6">
-										<label class="form-label">随机结束时间</label>
-										<input type="time" class="form-control" id="randomEnd" value="18:00">
-									</div>
-								</div>
-								<small class="text-muted">系统会在时间范围内随机选择执行时间。</small>
-							</div>
+							<div id="triggerList" class="d-flex flex-column gap-3"></div>
+							<div id="noTriggerHint" class="text-muted small">请至少添加一个触发器。</div>
 						</div>
 					</div>
+
+					<template id="trigger-item-template">
+						<div class="trigger-item card border-secondary">
+							<div class="card-body">
+								<div class="d-flex justify-content-between align-items-center mb-3">
+									<h6 class="mb-0">触发器</h6>
+									<div class="btn-group btn-group-sm">
+										<button type="button" class="btn btn-outline-secondary trigger-duplicate-btn">
+											<i class="bi bi-files"></i> 复制
+										</button>
+										<button type="button" class="btn btn-outline-danger trigger-remove-btn">
+											<i class="bi bi-x-circle"></i> 移除
+										</button>
+									</div>
+								</div>
+								<div class="row g-3 align-items-center">
+									<div class="col-md-4">
+										<label class="form-label">触发类型</label>
+										<select class="form-select trigger-type-select">
+											<option value="scheduled">定时执行</option>
+											<option value="interval">间隔执行</option>
+											<option value="random_time">随机时间</option>
+											<option value="weekly">按周执行</option>
+											<option value="monthly">按月执行</option>
+											<option value="specific_date">指定日期</option>
+										</select>
+									</div>
+									<div class="col-md-4">
+										<label class="form-label">开始时间</label>
+										<input type="time" class="form-control trigger-start-time" value="09:00">
+									</div>
+									<div class="col-md-4">
+										<label class="form-label">结束时间</label>
+										<input type="time" class="form-control trigger-end-time" value="18:00">
+									</div>
+								</div>
+								<div class="row g-3 mt-2 trigger-section trigger-interval d-none">
+									<div class="col-md-4">
+										<label class="form-label">间隔时间（分钟）</label>
+										<input type="number" class="form-control trigger-interval-minutes" min="1" value="30">
+									</div>
+								</div>
+								<div class="row g-3 mt-2 trigger-section trigger-random-time d-none">
+									<div class="col-md-4">
+										<label class="form-label">随机开始</label>
+										<input type="time" class="form-control trigger-random-start" value="09:00">
+									</div>
+									<div class="col-md-4">
+										<label class="form-label">随机结束</label>
+										<input type="time" class="form-control trigger-random-end" value="18:00">
+									</div>
+								</div>
+								<div class="trigger-section trigger-weekly d-none mt-3">
+									<label class="form-label">每周执行星期</label>
+									<div class="d-flex flex-wrap gap-2 trigger-weekly-days"></div>
+								</div>
+								<div class="trigger-section trigger-monthly d-none mt-3">
+									<label class="form-label">执行日期</label>
+									<input type="text" class="form-control trigger-days-of-month" placeholder="例如: 1, 15, 30">
+									<small class="text-muted">使用逗号分隔 1-31 之间的数字。</small>
+								</div>
+								<div class="trigger-section trigger-specific-date d-none mt-3">
+									<label class="form-label">指定日期时间</label>
+									<textarea class="form-control trigger-specific-datetimes" rows="3" placeholder="2024-10-01 08:30"></textarea>
+									<small class="text-muted">每行一个日期时间，格式 YYYY-MM-DD HH:MM。</small>
+								</div>
+							</div>
+						</div>
+					</template>
 
 					<div class="card mt-4">
 						<div class="card-header bg-light">
@@ -256,6 +286,19 @@
 									<label class="form-label">ADB 设备 ID</label>
 									<input type="text" class="form-control" id="adbDeviceId" placeholder="127.0.0.1:5555">
 								</div>
+								<div class="col-md-6">
+									<label class="form-label">启动延迟（秒）</label>
+									<input type="number" class="form-control" id="adbLaunchDelay" min="0" placeholder="0">
+								</div>
+								<div class="col-md-6">
+									<label class="form-label">应用包名</label>
+									<input type="text" class="form-control" id="adbLaunchPackage" placeholder="com.example.app">
+								</div>
+								<div class="col-md-6">
+									<label class="form-label">启动 Activity</label>
+									<input type="text" class="form-control" id="adbLaunchActivity" placeholder="com.example.app/.MainActivity">
+									<small class="text-muted">可选，未填写时将使用 monkey 根据包名启动。</small>
+								</div>
 							</div>
 							<div class="row g-3 mt-1">
 								<div class="col-md-6">
@@ -269,6 +312,33 @@
 										<input class="form-check-input" type="checkbox" id="enableTempLog">
 										<label class="form-check-label" for="enableTempLog">启用临时日志</label>
 									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="card mt-4">
+						<div class="card-header bg-light">
+							<i class="bi bi-arrow-counterclockwise me-2"></i> 失败重试策略
+						</div>
+						<div class="card-body">
+							<div class="form-check mb-3">
+								<input class="form-check-input" type="checkbox" id="retryEnabled">
+								<label class="form-check-label" for="retryEnabled">启用自动重试</label>
+							</div>
+							<div id="retryConfigSection" class="row g-3 d-none">
+								<div class="col-md-4">
+									<label class="form-label">最大重试次数</label>
+									<input type="number" class="form-control" id="retryMax" min="0" value="0">
+								</div>
+								<div class="col-md-4">
+									<label class="form-label">重试延迟（秒）</label>
+									<input type="number" class="form-control" id="retryDelay" min="1" value="60">
+								</div>
+								<div class="col-md-4">
+									<label class="form-label">通知阈值</label>
+									<input type="number" class="form-control" id="retryNotify" min="1" placeholder="可选">
+									<small class="text-muted">达到指定失败次数时发送通知</small>
 								</div>
 							</div>
 						</div>
@@ -392,7 +462,10 @@
 	const triggerTypeTexts = {
 		scheduled: '定时执行',
 		interval: '间隔执行',
-		random_time: '随机时间'
+		random_time: '随机时间',
+		weekly: '按周执行',
+		monthly: '按月执行',
+		specific_date: '指定日期'
 	};
 
 	function escapeHtml(value) {
@@ -416,6 +489,271 @@
 			return '-';
 		}
 		return date.toLocaleString();
+	}
+
+	const weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+	function describeTrigger(trigger) {
+		if (!trigger) {
+			return '-';
+		}
+		switch (trigger.trigger_type) {
+			case 'scheduled':
+				return `每天 ${escapeHtml(trigger.start_time || '--')} ~ ${escapeHtml(trigger.end_time || '--')}`;
+			case 'interval':
+				return `每隔 ${trigger.interval_minutes ?? '?'} 分钟执行`;
+			case 'random_time':
+				return `每天随机时间 ${escapeHtml(trigger.random_start_time || '--')} ~ ${escapeHtml(trigger.random_end_time || '--')}`;
+			case 'weekly': {
+				const days = Array.isArray(trigger.days_of_week)
+					? trigger.days_of_week.map(day => weekdayNames[day] ?? day).join('、')
+					: '-';
+				return `每周 ${escapeHtml(days)} 的 ${escapeHtml(trigger.start_time || '--')}`;
+			}
+			case 'monthly': {
+				const days = Array.isArray(trigger.days_of_month)
+					? trigger.days_of_month.join('、')
+					: '-';
+				return `每月 ${escapeHtml(days)} 日 ${escapeHtml(trigger.start_time || '--')}`;
+			}
+			case 'specific_date': {
+				const dates = Array.isArray(trigger.specific_datetimes) ? trigger.specific_datetimes : [];
+				if (!dates.length) return '指定日期执行';
+				const preview = dates.slice(0, 3).map(escapeHtml).join('、');
+				return dates.length > 3 ? `${preview} 等 ${dates.length} 个时间点` : preview;
+			}
+			default:
+				return escapeHtml(trigger.trigger_type || '-');
+		}
+	}
+
+	function clearTriggers() {
+		const list = document.getElementById('triggerList');
+		if (list) {
+			list.innerHTML = '';
+		}
+		updateTriggerIndices();
+		updateTriggerEmptyHint();
+	}
+
+	function updateTriggerEmptyHint() {
+		const hint = document.getElementById('noTriggerHint');
+		if (!hint) return;
+		const hasTrigger = document.querySelectorAll('#triggerList .trigger-item').length > 0;
+		hint.classList.toggle('d-none', hasTrigger);
+	}
+
+	function updateTriggerIndices() {
+		const items = document.querySelectorAll('#triggerList .trigger-item');
+		items.forEach((item, index) => {
+			const title = item.querySelector('h6');
+			if (title) {
+				title.textContent = `触发器 ${index + 1}`;
+			}
+			const removeBtn = item.querySelector('.trigger-remove-btn');
+			if (removeBtn) {
+				removeBtn.classList.toggle('d-none', items.length === 1);
+			}
+		});
+	}
+
+	function setupWeeklyCheckboxes(triggerElement, selected = []) {
+		const container = triggerElement.querySelector('.trigger-weekly-days');
+		if (!container || container.childElementCount) {
+			return;
+		}
+		const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+		weekdays.forEach((label, index) => {
+			const wrapper = document.createElement('div');
+			wrapper.className = 'form-check form-check-inline';
+			const input = document.createElement('input');
+			input.type = 'checkbox';
+			input.className = 'form-check-input';
+			input.value = index;
+			if (selected.includes(index)) {
+				input.checked = true;
+			}
+			const text = document.createElement('label');
+			text.className = 'form-check-label';
+			text.textContent = label;
+			wrapper.appendChild(input);
+			wrapper.appendChild(text);
+			container.appendChild(wrapper);
+		});
+	}
+
+	function updateTriggerSections(triggerElement) {
+		const typeSelect = triggerElement.querySelector('.trigger-type-select');
+		if (!typeSelect) return;
+		const type = typeSelect.value;
+		const startGroup = triggerElement.querySelector('.trigger-start-time')?.closest('.col-md-4');
+		const endGroup = triggerElement.querySelector('.trigger-end-time')?.closest('.col-md-4');
+		triggerElement.querySelectorAll('.trigger-section').forEach(section => {
+			section.classList.add('d-none');
+		});
+
+		if (startGroup) {
+			startGroup.classList.remove('d-none');
+		}
+		if (endGroup) {
+			endGroup.classList.remove('d-none');
+		}
+
+		switch (type) {
+			case 'scheduled':
+				break;
+			case 'interval':
+				if (startGroup) startGroup.classList.add('d-none');
+				if (endGroup) endGroup.classList.add('d-none');
+				triggerElement.querySelector('.trigger-interval')?.classList.remove('d-none');
+				break;
+			case 'random_time':
+				if (startGroup) startGroup.classList.add('d-none');
+				if (endGroup) endGroup.classList.add('d-none');
+				triggerElement.querySelector('.trigger-random-time')?.classList.remove('d-none');
+				break;
+			case 'weekly':
+				if (endGroup) endGroup.classList.add('d-none');
+				triggerElement.querySelector('.trigger-weekly')?.classList.remove('d-none');
+				break;
+			case 'monthly':
+				if (endGroup) endGroup.classList.add('d-none');
+				triggerElement.querySelector('.trigger-monthly')?.classList.remove('d-none');
+				break;
+			case 'specific_date':
+				if (startGroup) startGroup.classList.add('d-none');
+				if (endGroup) endGroup.classList.add('d-none');
+				triggerElement.querySelector('.trigger-specific-date')?.classList.remove('d-none');
+				break;
+			default:
+				break;
+		}
+	}
+
+	function extractTriggerData(triggerElement, { validate = false } = {}) {
+		const type = triggerElement.querySelector('.trigger-type-select')?.value || 'scheduled';
+		const trigger = { trigger_type: type };
+		const startTime = triggerElement.querySelector('.trigger-start-time')?.value || null;
+		const endTime = triggerElement.querySelector('.trigger-end-time')?.value || null;
+
+		if (type === 'scheduled') {
+			trigger.start_time = startTime;
+			trigger.end_time = endTime;
+		} else if (type === 'interval') {
+			const interval = Number(triggerElement.querySelector('.trigger-interval-minutes')?.value);
+			if (Number.isFinite(interval) && interval > 0) {
+				trigger.interval_minutes = interval;
+			} else if (validate) {
+				throw new Error('请为间隔触发配置有效的间隔分钟数');
+			}
+		} else if (type === 'random_time') {
+			const randomStart = triggerElement.querySelector('.trigger-random-start')?.value || null;
+			const randomEnd = triggerElement.querySelector('.trigger-random-end')?.value || null;
+			if (validate && (!randomStart || !randomEnd)) {
+				throw new Error('请为随机时间触发配置开始和结束时间');
+			}
+			trigger.random_start_time = randomStart;
+			trigger.random_end_time = randomEnd;
+		} else if (type === 'weekly') {
+			const selectedDays = Array.from(triggerElement.querySelectorAll('.trigger-weekly-days input:checked')).map(input => Number(input.value));
+			if (validate && !selectedDays.length) {
+				throw new Error('请至少选择一个星期用于按周触发');
+			}
+			trigger.start_time = startTime;
+			trigger.days_of_week = selectedDays;
+		} else if (type === 'monthly') {
+			const raw = triggerElement.querySelector('.trigger-days-of-month')?.value || '';
+			const days = raw.split(/[,，\s]+/)
+				.map(item => Number(item.trim()))
+				.filter(num => Number.isInteger(num) && num >= 1 && num <= 31);
+			if (validate && !days.length) {
+				throw new Error('请至少指定一个有效的日期 (1-31)');
+			}
+			trigger.start_time = startTime;
+			trigger.days_of_month = days;
+		} else if (type === 'specific_date') {
+			const lines = (triggerElement.querySelector('.trigger-specific-datetimes')?.value || '')
+				.split(/\n+/)
+				.map(item => item.trim())
+				.filter(Boolean);
+			if (validate && !lines.length) {
+				throw new Error('请至少填写一个指定的日期时间');
+			}
+			trigger.specific_datetimes = lines;
+		}
+
+		return trigger;
+	}
+
+	function collectTriggerConfigs() {
+		const triggerItems = document.querySelectorAll('#triggerList .trigger-item');
+		const triggers = [];
+		try {
+			triggerItems.forEach(item => {
+				const trigger = extractTriggerData(item, { validate: true });
+				triggers.push(trigger);
+			});
+		} catch (error) {
+			showToast(error.message || '触发器配置无效', 'warning');
+			return null;
+		}
+		return triggers;
+	}
+
+	function addTrigger(triggerData = {}) {
+		const template = document.getElementById('trigger-item-template');
+		if (!template) return;
+		const clone = template.content.firstElementChild.cloneNode(true);
+		const typeSelect = clone.querySelector('.trigger-type-select');
+		const startInput = clone.querySelector('.trigger-start-time');
+		const endInput = clone.querySelector('.trigger-end-time');
+		const intervalInput = clone.querySelector('.trigger-interval-minutes');
+		const randomStartInput = clone.querySelector('.trigger-random-start');
+		const randomEndInput = clone.querySelector('.trigger-random-end');
+		const monthlyInput = clone.querySelector('.trigger-days-of-month');
+		const specificTextarea = clone.querySelector('.trigger-specific-datetimes');
+
+		const type = triggerData.trigger_type || 'scheduled';
+		typeSelect.value = type;
+		if (startInput) {
+			startInput.value = triggerData.start_time || '09:00';
+		}
+		if (endInput) {
+			endInput.value = triggerData.end_time || '18:00';
+		}
+		if (intervalInput && typeof triggerData.interval_minutes === 'number') {
+			intervalInput.value = triggerData.interval_minutes;
+		}
+		if (randomStartInput) {
+			randomStartInput.value = triggerData.random_start_time || triggerData.start_time || '09:00';
+		}
+		if (randomEndInput) {
+			randomEndInput.value = triggerData.random_end_time || triggerData.end_time || '18:00';
+		}
+		if (monthlyInput && Array.isArray(triggerData.days_of_month)) {
+			monthlyInput.value = triggerData.days_of_month.join(', ');
+		}
+		if (specificTextarea && Array.isArray(triggerData.specific_datetimes)) {
+			specificTextarea.value = triggerData.specific_datetimes.join('\n');
+		}
+
+		setupWeeklyCheckboxes(clone, Array.isArray(triggerData.days_of_week) ? triggerData.days_of_week : []);
+		updateTriggerSections(clone);
+
+		typeSelect.addEventListener('change', () => updateTriggerSections(clone));
+		clone.querySelector('.trigger-remove-btn')?.addEventListener('click', () => {
+			clone.remove();
+			updateTriggerIndices();
+			updateTriggerEmptyHint();
+		});
+		clone.querySelector('.trigger-duplicate-btn')?.addEventListener('click', () => {
+			const data = extractTriggerData(clone, { validate: false });
+			addTrigger(data);
+		});
+
+		document.getElementById('triggerList')?.appendChild(clone);
+		updateTriggerIndices();
+		updateTriggerEmptyHint();
 	}
 
 	async function loadTasks() {
@@ -505,7 +843,12 @@
 			const status = task.status || 'pending';
 			const statusBadge = statusColors[status] || 'secondary';
 			const statusText = statusTexts[status] || status;
-			const triggerType = task.trigger?.trigger_type || task.trigger_type || '-';
+			const triggerList = Array.isArray(task.triggers) && task.triggers.length
+				? task.triggers
+				: (task.trigger ? [task.trigger] : []);
+			const triggerSummary = triggerList.length
+				? triggerList.map(t => triggerTypeTexts[t.trigger_type] || t.trigger_type || '-').join(' / ')
+				: '-';
 			const nextRunTime = formatDateTime(task.next_run_time);
 			const resourceGroup = task.resource_group || '-';
 			const canManualRun = manualAllowed && status !== 'running';
@@ -541,7 +884,7 @@
 					<td class="text-center"><span class="badge bg-${statusBadge}">${statusText}</span></td>
 					<td class="text-center"><span class="badge bg-secondary">${task.priority}</span></td>
 					<td class="text-center">${escapeHtml(resourceGroup)}</td>
-					<td class="text-center">${triggerTypeTexts[triggerType] || triggerType}</td>
+					<td class="text-center">${triggerSummary}</td>
 					<td class="text-center"><small>${nextRunTime}</small></td>
 					<td class="text-end">
 						<div class="btn-group btn-group-sm" role="group">
@@ -595,43 +938,32 @@
 		taskFormElement.reset();
 
 		document.getElementById('taskPriority').value = 5;
-		document.getElementById('triggerType').value = 'scheduled';
-		document.getElementById('scheduledStart').value = '09:00';
-		document.getElementById('scheduledEnd').value = '18:00';
-		document.getElementById('intervalMinutes').value = 30;
-		document.getElementById('randomStart').value = '09:00';
-		document.getElementById('randomEnd').value = '18:00';
-
 		document.getElementById('taskEnabled').checked = true;
 		document.getElementById('enableAdbWakeup').checked = false;
 		document.getElementById('enableGlobalLog').checked = true;
 		document.getElementById('enableTempLog').checked = false;
 		document.getElementById('pushNotificationEnabled').checked = false;
 		document.getElementById('keywordMonitoringEnabled').checked = false;
+		document.getElementById('retryEnabled').checked = false;
+		document.getElementById('retryMax').value = 0;
+		document.getElementById('retryDelay').value = 60;
+		document.getElementById('retryNotify').value = '';
+		document.getElementById('adbLaunchDelay').value = '';
+		document.getElementById('adbLaunchPackage').value = '';
+		document.getElementById('adbLaunchActivity').value = '';
 
 		toggleAdbConfig();
-		showTriggerConfig('scheduled');
 		togglePushNotificationConfig();
 		syncKeywordSectionVisibility();
 		toggleKeywordConfig();
+		toggleRetryConfig();
+
+		clearTriggers();
+		addTrigger();
 
 		const groupSelect = document.getElementById('resourceGroupSelect');
 		if (groupSelect.options.length > 0) {
 			groupSelect.selectedIndex = 0;
-		}
-	}
-
-	function showTriggerConfig(type) {
-		document.querySelectorAll('.trigger-config').forEach(section => {
-			section.classList.add('d-none');
-		});
-
-		if (type === 'scheduled') {
-			document.getElementById('scheduledConfig').classList.remove('d-none');
-		} else if (type === 'interval') {
-			document.getElementById('intervalConfig').classList.remove('d-none');
-		} else if (type === 'random_time') {
-			document.getElementById('randomTimeConfig').classList.remove('d-none');
 		}
 	}
 
@@ -640,6 +972,9 @@
 		document.getElementById('adbConfigSection').classList.toggle('d-none', !enableAdb);
 		if (!enableAdb) {
 			document.getElementById('adbDeviceId').value = '';
+			document.getElementById('adbLaunchDelay').value = '';
+			document.getElementById('adbLaunchPackage').value = '';
+			document.getElementById('adbLaunchActivity').value = '';
 		}
 	}
 
@@ -661,6 +996,11 @@
 	function toggleKeywordConfig() {
 		const enabled = document.getElementById('keywordMonitoringEnabled').checked;
 		document.getElementById('keywordConfig').classList.toggle('d-none', !enabled);
+	}
+
+	function toggleRetryConfig() {
+		const enabled = document.getElementById('retryEnabled').checked;
+		document.getElementById('retryConfigSection').classList.toggle('d-none', !enabled);
 	}
 
 	function buildPostTaskConfig() {
@@ -710,27 +1050,37 @@
 		};
 	}
 
-	function buildTriggerConfig() {
-		const type = document.getElementById('triggerType').value;
-		const trigger = { trigger_type: type };
+	function buildRetryPolicy() {
+		const enabled = document.getElementById('retryEnabled').checked;
+		const maxRetriesValue = Number(document.getElementById('retryMax').value);
+		const delayValue = Number(document.getElementById('retryDelay').value);
+		const notifyValue = Number(document.getElementById('retryNotify').value);
 
-		if (type === 'scheduled') {
-			trigger.start_time = document.getElementById('scheduledStart').value || null;
-			trigger.end_time = document.getElementById('scheduledEnd').value || null;
-		} else if (type === 'interval') {
-			const interval = Number(document.getElementById('intervalMinutes').value);
-			trigger.interval_minutes = Number.isFinite(interval) && interval > 0 ? interval : null;
-		} else if (type === 'random_time') {
-			trigger.random_start_time = document.getElementById('randomStart').value || null;
-			trigger.random_end_time = document.getElementById('randomEnd').value || null;
+		const policy = {
+			enabled,
+			max_retries: enabled && Number.isFinite(maxRetriesValue) && maxRetriesValue >= 0 ? maxRetriesValue : 0,
+			delay_seconds: enabled && Number.isFinite(delayValue) && delayValue > 0 ? delayValue : 60,
+			notify_after_retries: null
+		};
+
+		if (enabled && Number.isFinite(notifyValue) && notifyValue > 0) {
+			policy.notify_after_retries = notifyValue;
 		}
 
-		return trigger;
+		return policy;
 	}
 
 	function collectTaskPayload() {
 		const enableAdb = document.getElementById('enableAdbWakeup').checked;
 		const adbDeviceId = document.getElementById('adbDeviceId').value.trim();
+		const triggers = collectTriggerConfigs();
+		if (!triggers) {
+			return null;
+		}
+		if (!triggers.length) {
+			showToast('请至少配置一个触发器', 'warning');
+			return null;
+		}
 
 		const payload = {
 			name: document.getElementById('taskName').value.trim(),
@@ -743,9 +1093,24 @@
 			adb_device_id: enableAdb && adbDeviceId ? adbDeviceId : null,
 			enable_global_log: document.getElementById('enableGlobalLog').checked,
 			enable_temp_log: document.getElementById('enableTempLog').checked,
-			trigger: buildTriggerConfig(),
+			triggers,
+			trigger: triggers[0],
+			retry_policy: buildRetryPolicy(),
 			post_task: buildPostTaskConfig()
 		};
+
+		if (enableAdb) {
+			const delayValue = Number(document.getElementById('adbLaunchDelay').value);
+			payload.adb_launch_delay_seconds = Number.isFinite(delayValue) && delayValue >= 0 ? delayValue : null;
+			const launchPackage = document.getElementById('adbLaunchPackage').value.trim();
+			const launchActivity = document.getElementById('adbLaunchActivity').value.trim();
+			payload.adb_launch_package = launchPackage || null;
+			payload.adb_launch_activity = launchActivity || null;
+		} else {
+			payload.adb_launch_delay_seconds = null;
+			payload.adb_launch_package = null;
+			payload.adb_launch_activity = null;
+		}
 
 		if (editingTaskId) {
 			payload.id = editingTaskId;
@@ -762,6 +1127,9 @@
 
 		try {
 			const payload = collectTaskPayload();
+			if (!payload) {
+				return;
+			}
 			if (!payload.name) {
 				showToast('任务名称不能为空', 'warning');
 				return;
@@ -822,27 +1190,28 @@
 		const statusBadge = statusColors[status] || 'secondary';
 		const statusText = statusTexts[status] || status;
 		const nextRunTime = listTask ? formatDateTime(listTask.next_run_time) : '-';
-		const trigger = taskConfig.trigger || {};
+		const triggerList = Array.isArray(taskConfig.triggers) && taskConfig.triggers.length
+			? taskConfig.triggers
+			: (taskConfig.trigger ? [taskConfig.trigger] : []);
+		const triggerListHtml = triggerList.length
+			? `<ul class="list-group list-group-flush">${triggerList.map((tr, index) => `
+				<li class="list-group-item px-0">
+					<div class="fw-semibold">${index + 1}. ${triggerTypeTexts[tr.trigger_type] || tr.trigger_type || '-'}</div>
+					<small class="text-muted">${describeTrigger(tr)}</small>
+				</li>
+			`).join('')}</ul>`
+			: '<span class="text-muted">未配置触发器</span>';
 		const postTask = taskConfig.post_task || {};
 		const push = postTask.push_notification || {};
 		const keywords = postTask.log_keywords || [];
 		const keywordNotification = postTask.keyword_notification || {};
-
-		const triggerDetails = (() => {
-			if (trigger.trigger_type === 'scheduled') {
-				return `
-					<tr><th>开始时间</th><td>${escapeHtml(trigger.start_time || '-')}</td></tr>
-					<tr><th>结束时间</th><td>${escapeHtml(trigger.end_time || '-')}</td></tr>
-				`;
-			}
-			if (trigger.trigger_type === 'interval') {
-				return `<tr><th>间隔分钟</th><td>${trigger.interval_minutes ?? '-'}</td></tr>`;
-			}
-			if (trigger.trigger_type === 'random_time') {
-				return `<tr><th>随机区间</th><td>${escapeHtml(trigger.random_start_time || '-')} ~ ${escapeHtml(trigger.random_end_time || '-')}</td></tr>`;
-			}
-			return '';
-		})();
+		const retryPolicy = taskConfig.retry_policy || {};
+		const retryRows = retryPolicy.enabled ? `
+			<tr><th>启用状态</th><td>启用</td></tr>
+			<tr><th>最大重试</th><td>${retryPolicy.max_retries ?? 0} 次</td></tr>
+			<tr><th>重试间隔</th><td>${retryPolicy.delay_seconds ?? 60} 秒</td></tr>
+			<tr><th>通知阈值</th><td>${retryPolicy.notify_after_retries ?? '未设置'}</td></tr>
+		` : '<tr><th>启用状态</th><td>未启用</td></tr>';
 
 		const keywordBadges = keywords.length
 			? keywords.map(word => `<span class="badge bg-warning text-dark me-1 mb-1">${escapeHtml(word)}</span>`).join('')
@@ -864,10 +1233,7 @@
 				</div>
 				<div class="col-md-6">
 					<h6 class="text-muted mb-2">触发配置</h6>
-					<table class="table table-sm">
-						<tr><th>触发类型</th><td>${triggerTypeTexts[trigger.trigger_type] || trigger.trigger_type || '-'}</td></tr>
-						${triggerDetails}
-					</table>
+					${triggerListHtml}
 				</div>
 				<div class="col-md-6">
 					<h6 class="text-muted mb-2">执行配置</h6>
@@ -875,8 +1241,15 @@
 						<tr><th>执行命令</th><td><code>${escapeHtml(taskConfig.main_command)}</code></td></tr>
 						<tr><th>ADB 唤醒</th><td>${taskConfig.enable_adb_wakeup ? '是' : '否'}</td></tr>
 						<tr><th>ADB 设备</th><td>${escapeHtml(taskConfig.adb_device_id) || '-'}</td></tr>
+						<tr><th>启动延迟</th><td>${taskConfig.adb_launch_delay_seconds ?? '-'} 秒</td></tr>
+						<tr><th>启动包名</th><td>${escapeHtml(taskConfig.adb_launch_package) || '-'}</td></tr>
+						<tr><th>启动 Activity</th><td>${escapeHtml(taskConfig.adb_launch_activity) || '-'}</td></tr>
 						<tr><th>全局日志</th><td>${taskConfig.enable_global_log ? '启用' : '关闭'}</td></tr>
 						<tr><th>临时日志</th><td>${taskConfig.enable_temp_log ? '启用' : '关闭'}</td></tr>
+					</table>
+					<h6 class="text-muted mb-2">失败重试</h6>
+					<table class="table table-sm">
+						${retryRows}
 					</table>
 				</div>
 				<div class="col-md-6">
@@ -997,19 +1370,21 @@
 		document.getElementById('mainCommand').value = taskConfig.main_command || '';
 		document.getElementById('enableAdbWakeup').checked = Boolean(taskConfig.enable_adb_wakeup);
 		document.getElementById('adbDeviceId').value = taskConfig.adb_device_id || '';
+		document.getElementById('adbLaunchDelay').value = taskConfig.adb_launch_delay_seconds ?? '';
+		document.getElementById('adbLaunchPackage').value = taskConfig.adb_launch_package || '';
+		document.getElementById('adbLaunchActivity').value = taskConfig.adb_launch_activity || '';
 		document.getElementById('enableGlobalLog').checked = Boolean(taskConfig.enable_global_log);
 		document.getElementById('enableTempLog').checked = Boolean(taskConfig.enable_temp_log);
 
-		const trigger = taskConfig.trigger || { trigger_type: 'scheduled' };
-		const triggerType = trigger.trigger_type || 'scheduled';
-		document.getElementById('triggerType').value = triggerType;
-		showTriggerConfig(triggerType);
-
-		document.getElementById('scheduledStart').value = trigger.start_time || '09:00';
-		document.getElementById('scheduledEnd').value = trigger.end_time || '18:00';
-		document.getElementById('intervalMinutes').value = trigger.interval_minutes ?? 30;
-		document.getElementById('randomStart').value = trigger.random_start_time || '09:00';
-		document.getElementById('randomEnd').value = trigger.random_end_time || '18:00';
+		clearTriggers();
+		const triggerList = Array.isArray(taskConfig.triggers) && taskConfig.triggers.length
+			? taskConfig.triggers
+			: (taskConfig.trigger ? [taskConfig.trigger] : []);
+		if (triggerList.length) {
+			triggerList.forEach(trigger => addTrigger(trigger));
+		} else {
+			addTrigger();
+		}
 
 		const postTask = taskConfig.post_task || {};
 		const push = postTask.push_notification || {};
@@ -1029,10 +1404,18 @@
 		document.getElementById('keywordTag').value = keywordNotification.tag || '';
 		document.getElementById('keywordContent').value = keywordNotification.content || '';
 
+		const retryPolicy = taskConfig.retry_policy || {};
+		const retryEnabled = Boolean(retryPolicy.enabled);
+		document.getElementById('retryEnabled').checked = retryEnabled;
+		document.getElementById('retryMax').value = retryPolicy.max_retries ?? 0;
+		document.getElementById('retryDelay').value = retryPolicy.delay_seconds ?? 60;
+		document.getElementById('retryNotify').value = retryPolicy.notify_after_retries ?? '';
+
 		toggleAdbConfig();
 		togglePushNotificationConfig();
 		syncKeywordSectionVisibility();
 		toggleKeywordConfig();
+		toggleRetryConfig();
 	}
 
 	function createTask() {
@@ -1143,13 +1526,12 @@
 		document.getElementById('status-filter').addEventListener('change', filterTasks);
 		document.getElementById('group-filter').addEventListener('change', filterTasks);
 
-		document.getElementById('triggerType').addEventListener('change', event => {
-			showTriggerConfig(event.target.value);
-		});
+		document.getElementById('addTriggerBtn').addEventListener('click', () => addTrigger());
 		document.getElementById('enableAdbWakeup').addEventListener('change', toggleAdbConfig);
 		document.getElementById('pushNotificationEnabled').addEventListener('change', togglePushNotificationConfig);
 		document.getElementById('enableTempLog').addEventListener('change', syncKeywordSectionVisibility);
 		document.getElementById('keywordMonitoringEnabled').addEventListener('change', toggleKeywordConfig);
+		document.getElementById('retryEnabled').addEventListener('change', toggleRetryConfig);
 
 		document.getElementById('run-task-btn').addEventListener('click', () => {
 			if (currentTaskId) {

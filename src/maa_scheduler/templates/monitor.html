@@ -211,6 +211,36 @@
         processes: 0
     };
 
+    function getStatusColor(status) {
+        switch (status) {
+            case 'running':
+                return 'success';
+            case 'completed':
+                return 'primary';
+            case 'failed':
+                return 'danger';
+            case 'cancelled':
+                return 'warning';
+            default:
+                return 'secondary';
+        }
+    }
+
+    function getStatusText(status) {
+        switch (status) {
+            case 'running':
+                return '执行中';
+            case 'completed':
+                return '已完成';
+            case 'failed':
+                return '失败';
+            case 'cancelled':
+                return '已取消';
+            default:
+                return '待执行';
+        }
+    }
+
     // 初始化页面
     document.addEventListener('DOMContentLoaded', function() {
         refreshAll();
@@ -358,14 +388,10 @@
     // 更新任务历史
     async function updateTaskHistory() {
         try {
-            const tasks = await apiRequest('/api/tasks');
-            const completedTasks = tasks.filter(task => 
-                task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
-            ).slice(0, 10); // 只显示最近10个
-            
+            const history = await apiRequest('/api/task-history?limit=10');
             const tbody = document.getElementById('task-history-table');
-            
-            if (completedTasks.length === 0) {
+
+            if (!history || history.length === 0) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="6" class="text-center text-muted">暂无执行记录</td>
@@ -373,30 +399,34 @@
                 `;
                 return;
             }
-            
+
             let html = '';
-            completedTasks.forEach(task => {
-                const statusColor = getStatusColor(task.status);
-                const statusText = getStatusText(task.status);
-                
+            history.forEach(record => {
+                const statusColor = getStatusColor(record.status);
+                const statusText = getStatusText(record.status);
+                const startTime = record.start_time ? new Date(record.start_time).toLocaleString() : '-';
+                const durationText = record.duration !== null && record.duration !== undefined
+                    ? `${record.duration.toFixed(1)} 秒`
+                    : '--';
+
                 html += `
                     <tr>
-                        <td>${task.name}</td>
+                        <td>${record.task_name}</td>
                         <td><span class="badge bg-${statusColor}">${statusText}</span></td>
-                        <td><small>${new Date().toLocaleString()}</small></td>
-                        <td><small>-- 秒</small></td>
-                        <td><span class="badge bg-info">${task.resource_group}</span></td>
+                        <td><small>${startTime}</small></td>
+                        <td><small>${durationText}</small></td>
+                        <td><span class="badge bg-info">${record.resource_group}</span></td>
                         <td>
-                            <button class="btn btn-outline-primary btn-sm" onclick="viewTaskLog('${task.id}', '${task.name}')">
+                            <button class="btn btn-outline-primary btn-sm" onclick="viewTaskLog('${record.task_id}', '${record.task_name}')">
                                 <i class="bi bi-eye"></i>
                             </button>
                         </td>
                     </tr>
                 `;
             });
-            
+
             tbody.innerHTML = html;
-            
+
         } catch (error) {
             console.error('更新任务历史失败:', error);
         }

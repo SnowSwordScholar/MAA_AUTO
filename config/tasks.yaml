@@ -9,9 +9,16 @@ tasks:
   enable_adb_wakeup: false
   enable_global_log: true
   enable_temp_log: true
-  trigger:
-    trigger_type: interval
+  triggers:
+  - trigger_type: interval
     interval_minutes: 5
+    days_of_week: []
+    days_of_month: []
+    specific_datetimes: []
+  retry_policy:
+    enabled: false
+    max_retries: 0
+    delay_seconds: 60
   post_task:
     log_keywords: []
     push_notification:
@@ -24,16 +31,26 @@ tasks:
   enabled: true
   priority: 3
   resource_group: redroid
-  main_command: adb -s localhost:35555 shell am start -n com.hypergryph.arknights/com.u8.sdk.U8UnityContext
-    ; sleep 3 ; /root/.cargo/bin/maa roguelike Sami -v
+  main_command: /root/.cargo/bin/maa roguelike Sami -v
   enable_adb_wakeup: true
   adb_device_id: 127.0.0.1:35555
   enable_global_log: true
   enable_temp_log: true
-  trigger:
-    trigger_type: scheduled
+  adb_launch_delay_seconds: 3
+  adb_launch_package: com.hypergryph.arknights
+  adb_launch_activity: com.hypergryph.arknights/com.u8.sdk.U8UnityContext
+  triggers:
+  - trigger_type: scheduled
     start_time: 04:00
     end_time: 03:00
+    days_of_week: []
+    days_of_month: []
+    specific_datetimes: []
+  retry_policy:
+    enabled: true
+    max_retries: 10
+    delay_seconds: 60
+    notify_after_retries: 3
   post_task:
     log_keywords: []
     push_notification:

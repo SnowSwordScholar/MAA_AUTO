@@ -8,7 +8,7 @@ import yaml
 import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, root_validator
 from dotenv import load_dotenv
 
 # 加载环境变量
@@ -53,18 +53,47 @@ class ResourceGroup(BaseModel):
 
 class TriggerConfig(BaseModel):
     """触发器配置"""
-    trigger_type: Literal["scheduled", "interval", "random_time"] = Field(..., description="触发器类型")
-    
-    # 定时执行 (scheduled)
+    trigger_type: Literal[
+        "scheduled",
+        "interval",
+        "random_time",
+        "weekly",
+        "monthly",
+        "specific_date"
+    ] = Field(..., description="触发器类型")
+
+    # 定时/每日执行 (scheduled)
     start_time: Optional[str] = Field(default=None, description="开始时间, 格式 HH:MM")
     end_time: Optional[str] = Field(default=None, description="结束时间, 格式 HH:MM")
-    
+
     # 间隔执行 (interval)
     interval_minutes: Optional[int] = Field(default=None, description="间隔分钟数")
-    
+
     # 随机时间执行 (random_time)
     random_start_time: Optional[str] = Field(default=None, description="随机开始时间, 格式 HH:MM")
     random_end_time: Optional[str] = Field(default=None, description="随机结束时间, 格式 HH:MM")
+
+    # 周期执行 (weekly/monthly)
+    days_of_week: List[int] = Field(default_factory=list, description="每周执行的星期，0=周一")
+    days_of_month: List[int] = Field(default_factory=list, description="每月执行的日期 (1-31)")
+
+    # 指定日期执行
+    specific_datetimes: List[str] = Field(
+        default_factory=list,
+        description="指定执行的日期时间，格式 YYYY-MM-DD HH:MM"
+    )
+
+
+class RetryPolicy(BaseModel):
+    """任务重试策略"""
+    enabled: bool = Field(default=False, description="是否启用失败重试")
+    max_retries: int = Field(default=0, ge=0, description="最大重试次数")
+    delay_seconds: int = Field(default=60, ge=0, description="每次重试前的延迟（秒）")
+    notify_after_retries: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="达到指定失败次数后发送通知"
+    )
 
 class KeywordNotificationConfig(BaseModel):
     """关键词匹配通知配置"""
@@ -106,9 +135,35 @@ class TaskConfig(BaseModel):
     # 日志选项
     enable_global_log: bool = Field(default=True, description="是否输出到全局日志")
     enable_temp_log: bool = Field(default=False, description="是否记录到临时日志")
-    
-    trigger: TriggerConfig = Field(..., description="触发器配置")
+
+    # ADB 扩展配置
+    adb_launch_delay_seconds: Optional[int] = Field(default=None, ge=0, description="唤醒后延迟启动应用的秒数")
+    adb_launch_package: Optional[str] = Field(default=None, description="需要启动的包名")
+    adb_launch_activity: Optional[str] = Field(default=None, description="需要启动的 Activity，格式 package/activity")
+
+    triggers: List[TriggerConfig] = Field(default_factory=list, description="触发器列表")
+    trigger: Optional[TriggerConfig] = Field(default=None, description="兼容旧版的单触发器配置")
+    retry_policy: RetryPolicy = Field(default_factory=RetryPolicy, description="失败重试策略")
     post_task: PostTaskConfig = Field(default_factory=PostTaskConfig, description="后置任务配置")
+
+    @root_validator(pre=True)
+    def _ensure_triggers(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        trigger = values.get("trigger")
+        triggers = values.get("triggers")
+        if not triggers and trigger:
+            values["triggers"] = [trigger]
+        elif triggers and not trigger and isinstance(triggers, list) and triggers:
+            # 兼容旧前端逻辑需要读取 primary trigger
+            values["trigger"] = triggers[0]
+        elif not triggers and not trigger:
+            raise ValueError("任务必须至少配置一个触发器")
+        return values
+
+    @property
+    def primary_trigger(self) -> Optional[TriggerConfig]:
+        if self.triggers:
+            return self.triggers[0]
+        return self.trigger
 
 class AppConfig(BaseModel):
     """根配置模型"""
@@ -174,7 +229,18 @@ class ConfigManager:
         
         # 分离主配置和任务配置
         main_config_dict = config.dict(exclude={'tasks', 'webhook'}, exclude_none=True)
-        tasks_dict = {"tasks": [task.dict(exclude_none=True) for task in config.tasks]}
+        tasks_output: List[Dict[str, Any]] = []
+        for task in config.tasks:
+            task_data = task.dict(exclude={"trigger"}, exclude_none=True)
+            triggers = []
+            if task.triggers:
+                triggers = [tr.dict(exclude_none=True) for tr in task.triggers]
+            elif task.trigger:
+                triggers = [task.trigger.dict(exclude_none=True)]
+            task_data["triggers"] = triggers
+            tasks_output.append(task_data)
+
+        tasks_dict = {"tasks": tasks_output}
 
         # 保存主配置文件
         with open(self.config_path, 'w', encoding='utf-8') as f:

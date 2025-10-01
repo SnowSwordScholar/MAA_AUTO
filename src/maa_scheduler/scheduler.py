@@ -5,15 +5,16 @@
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, time
-from typing import Dict, List, Set, Optional, Union
+from typing import Dict, List, Set, Optional, Union, Tuple
 from enum import Enum
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 import random
 
-from .config import TaskConfig, ResourceGroup, config_manager, AppConfig
+from .config import TaskConfig, ResourceGroup, config_manager, AppConfig, TriggerConfig
 from .executor import task_executor
 from .notification import notification_service
 
@@ -24,30 +25,37 @@ class SchedulerMode(Enum):
     SCHEDULER = "scheduler"
     SINGLE_TASK = "single_task"
 
+@dataclass
+class TaskQueueItem:
+    task: TaskConfig
+    trigger_key: Optional[str] = None
+
+
 class TaskQueue:
     """任务队列"""
     
     def __init__(self):
-        self.queue: List[TaskConfig] = []
+        self.queue: List[TaskQueueItem] = []
         self.lock = asyncio.Lock()
     
-    async def put(self, task: TaskConfig):
+    async def put(self, task: TaskConfig, trigger_key: Optional[str] = None):
         async with self.lock:
+            item = TaskQueueItem(task=task, trigger_key=trigger_key)
             # 按优先级插入（数字越小优先级越高）
             for i, queued_task in enumerate(self.queue):
-                if task.priority < queued_task.priority:
-                    self.queue.insert(i, task)
+                if task.priority < queued_task.task.priority:
+                    self.queue.insert(i, item)
                     logger.info(f"任务 '{task.name}' 已按优先级插入队列，当前队列长度: {len(self.queue)}")
                     return
-            self.queue.append(task)
+            self.queue.append(item)
             logger.info(f"任务 '{task.name}' 已添加到队列末尾，当前队列长度: {len(self.queue)}")
     
-    async def get(self) -> Optional[TaskConfig]:
+    async def get(self) -> Optional[TaskQueueItem]:
         async with self.lock:
             if self.queue:
-                task = self.queue.pop(0)
-                logger.info(f"从队列获取任务: {task.name}, 剩余队列长度: {len(self.queue)}")
-                return task
+                item = self.queue.pop(0)
+                logger.info(f"从队列获取任务: {item.task.name}, 剩余队列长度: {len(self.queue)}")
+                return item
             return None
     
     def size(self) -> int:
@@ -126,11 +134,18 @@ class TaskScheduler:
         self.scheduler = AsyncIOScheduler()
         self.task_queue = TaskQueue()
         self.resource_manager = ResourceManager()
-        self.mode = SchedulerMode.SCHEDULER
+        try:
+            self.mode = SchedulerMode(config_manager.get_config().app.mode)
+        except Exception:
+            self.mode = SchedulerMode.SCHEDULER
         self.executor = task_executor
         self.is_running = False
         self.worker_task: Optional[asyncio.Task] = None
         self.task_configs: Dict[str, TaskConfig] = {}
+        self.task_triggers: Dict[str, TriggerConfig] = {}
+        self.job_trigger_lookup: Dict[str, str] = {}
+        self.retry_counters: Dict[str, int] = {}
+        self.retry_notified: Dict[str, bool] = {}
 
     async def start(self):
         if self.is_running:
@@ -138,14 +153,16 @@ class TaskScheduler:
             return
         
         logger.info("启动任务调度器")
-        await self.reload_tasks()
-        if self.mode != SchedulerMode.SCHEDULER:
-            logger.info("启动调度器时自动切换到自动调度模式")
+        try:
+            self.mode = SchedulerMode(config_manager.get_config().app.mode)
+        except Exception:
+            logger.warning("配置中的调度模式无效，回退到自动调度模式")
             self.mode = SchedulerMode.SCHEDULER
+        await self.reload_tasks()
         self.scheduler.start()
         self.worker_task = asyncio.create_task(self._worker_loop())
         self.is_running = True
-        logger.info("任务调度器已成功启动")
+        logger.info(f"任务调度器已成功启动 (当前模式: {self.mode.value})")
 
     async def stop(self):
         if not self.is_running:
@@ -175,88 +192,189 @@ class TaskScheduler:
         self.resource_manager.load_resource_groups(config)
         
         self.scheduler.remove_all_jobs()
+        self.job_trigger_lookup.clear()
+        self.task_triggers.clear()
+        self.retry_counters.clear()
+        self.retry_notified.clear()
         self.task_configs = {task.id: task for task in config.tasks}
-        
-        for task_id, task in self.task_configs.items():
-            if task.enabled:
-                self._schedule_initial_task(task)
-        
-        logger.info(f"已加载并调度 {len(self.scheduler.get_jobs())} 个启用的任务")
 
-    def _schedule_initial_task(self, task: TaskConfig):
-        """为任务安排首次执行"""
-        trigger = None
-        run_date = None
+        for task in self.task_configs.values():
+            if not task.enabled:
+                continue
+
+            triggers = task.triggers or ([task.trigger] if task.trigger else [])
+            if not triggers:
+                logger.warning(f"任务 '{task.name}' 未配置触发器，已跳过")
+                continue
+
+            for index, trigger in enumerate(triggers):
+                trigger_key = f"{task.id}:{index}"
+                self.task_triggers[trigger_key] = trigger
+                self._schedule_trigger(task, trigger_key, trigger)
         
-        ttype = task.trigger.trigger_type
+        logger.info(f"已加载并调度 {len(self.scheduler.get_jobs())} 个启用的任务触发器")
+
+    def _schedule_trigger(self, task: TaskConfig, trigger_key: str, trigger: TriggerConfig):
+        """根据触发器配置创建调度任务"""
+        job_id_prefix = trigger_key
+
+        def register_job(job_id: str):
+            self.job_trigger_lookup[job_id] = trigger_key
+
+        ttype = trigger.trigger_type
+        logger.debug(f"为任务 '{task.name}' 注册触发器 {ttype} (key={trigger_key})")
+
         if ttype == "scheduled":
             try:
-                hour, minute = map(int, task.trigger.start_time.split(':'))
-                trigger = CronTrigger(hour=hour, minute=minute, second=0)
-            except (ValueError, AttributeError) as e:
+                hour, minute = self._parse_time(trigger.start_time)
+                cron = CronTrigger(hour=hour, minute=minute, second=0)
+                job_id = f"{job_id_prefix}:daily"
+                self.scheduler.add_job(
+                    self._add_task_to_queue,
+                    cron,
+                    args=[task.id, trigger_key],
+                    id=job_id,
+                    name=f"{task.name}-daily",
+                    replace_existing=True
+                )
+                register_job(job_id)
+            except ValueError as e:
                 logger.error(f"任务 '{task.name}' 的定时触发器格式无效: {e}")
-                return
         elif ttype == "interval":
-            # 立即执行或在很短的延迟后执行，以便启动循环
-            run_date = datetime.now() + timedelta(seconds=1)
+            self._schedule_interval_run(task, trigger_key, trigger, initial=True)
         elif ttype == "random_time":
-            run_date = self._calculate_next_random_time(task)
-            if not run_date:
+            run_time = self._calculate_next_random_time(trigger, task.name)
+            if not run_time:
+                logger.warning(f"任务 '{task.name}' 随机触发器未能计算到下一次执行时间")
                 return
-        
-        if trigger:
+            job_id = f"{job_id_prefix}:random"
             self.scheduler.add_job(
                 self._add_task_to_queue,
-                trigger,
-                args=[task.id],
-                id=task.id,
-                name=task.name,
+                DateTrigger(run_date=run_time),
+                args=[task.id, trigger_key],
+                id=job_id,
+                name=f"{task.name}-random",
                 replace_existing=True
             )
-        elif run_date:
+            register_job(job_id)
+            logger.info(f"已为任务 '{task.name}' 注册随机触发，下一次在 {run_time}")
+        elif ttype == "weekly":
+            if not trigger.days_of_week:
+                logger.error(f"任务 '{task.name}' 周期触发缺少星期配置")
+                return
+            hour, minute = self._parse_time(trigger.start_time)
+            cron = CronTrigger(day_of_week=','.join(str(d) for d in trigger.days_of_week), hour=hour, minute=minute, second=0)
+            job_id = f"{job_id_prefix}:weekly"
             self.scheduler.add_job(
                 self._add_task_to_queue,
-                DateTrigger(run_date=run_date),
-                args=[task.id],
-                id=task.id,
-                name=task.name,
+                cron,
+                args=[task.id, trigger_key],
+                id=job_id,
+                name=f"{task.name}-weekly",
                 replace_existing=True
             )
-        logger.info(f"已为任务 '{task.name}' ({ttype}) 创建调度")
-
-    async def _on_task_completed(self, task: TaskConfig):
-        """任务完成后重新调度"""
-        logger.debug(f"任务 '{task.name}' 完成，检查是否需要重新调度。")
-        if not task.enabled or not self.is_running:
-            return
-
-        next_run_time = None
-        ttype = task.trigger.trigger_type
-
-        if ttype == "interval":
-            interval = task.trigger.interval_minutes or 0
-            next_run_time = datetime.now() + timedelta(minutes=interval)
-            logger.info(f"任务 '{task.name}' (间隔) 将在 {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} 再次运行")
-        elif ttype == "random_time":
-            next_run_time = self._calculate_next_random_time(task)
-            if next_run_time:
-                logger.info(f"任务 '{task.name}' (随机) 已重新调度在 {next_run_time.strftime('%Y-%m-%d %H:%M:%S')} 运行")
-
-        if next_run_time:
+            register_job(job_id)
+        elif ttype == "monthly":
+            if not trigger.days_of_month:
+                logger.error(f"任务 '{task.name}' 月度触发缺少日期配置")
+                return
+            hour, minute = self._parse_time(trigger.start_time)
+            cron = CronTrigger(day=','.join(str(d) for d in trigger.days_of_month), hour=hour, minute=minute, second=0)
+            job_id = f"{job_id_prefix}:monthly"
             self.scheduler.add_job(
                 self._add_task_to_queue,
-                DateTrigger(run_date=next_run_time),
-                args=[task.id],
-                id=task.id,
-                name=task.name,
+                cron,
+                args=[task.id, trigger_key],
+                id=job_id,
+                name=f"{task.name}-monthly",
                 replace_existing=True
             )
+            register_job(job_id)
+        elif ttype == "specific_date":
+            if not trigger.specific_datetimes:
+                logger.error(f"任务 '{task.name}' 特定日期触发缺少日期配置")
+                return
+            for idx, dt_str in enumerate(trigger.specific_datetimes):
+                try:
+                    run_time = self._parse_datetime(dt_str)
+                except ValueError:
+                    logger.error(f"任务 '{task.name}' 特定日期 '{dt_str}' 格式无效，应为 YYYY-MM-DD HH:MM")
+                    continue
+                job_id = f"{job_id_prefix}:date:{idx}"
+                self.scheduler.add_job(
+                    self._add_task_to_queue,
+                    DateTrigger(run_date=run_time),
+                    args=[task.id, trigger_key],
+                    id=job_id,
+                    name=f"{task.name}-date-{idx}",
+                    replace_existing=True
+                )
+                register_job(job_id)
+        else:
+            logger.error(f"任务 '{task.name}' 包含未知的触发类型: {ttype}")
 
-    def _calculate_next_random_time(self, task: TaskConfig) -> Optional[datetime]:
+    def _schedule_interval_run(
+        self,
+        task: TaskConfig,
+        trigger_key: str,
+        trigger: TriggerConfig,
+        initial: bool = False,
+        delay_seconds: Optional[int] = None
+    ):
+        interval_minutes = trigger.interval_minutes or 0
+        if interval_minutes <= 0 and delay_seconds is None:
+            logger.warning(f"任务 '{task.name}' 的间隔触发未配置 interval_minutes，将默认等待60秒")
+            interval_minutes = 1
+
+        if delay_seconds is None:
+            delay_seconds = max(interval_minutes * 60, 1)
+
+        if initial:
+            delay_seconds = min(delay_seconds, 1)
+
+        run_time = datetime.now() + timedelta(seconds=delay_seconds)
+        job_id = f"{trigger_key}:interval"
+        self.scheduler.add_job(
+            self._add_task_to_queue,
+            DateTrigger(run_date=run_time),
+            args=[task.id, trigger_key],
+            id=job_id,
+            name=f"{task.name}-interval",
+            replace_existing=True
+        )
+        self.job_trigger_lookup[job_id] = trigger_key
+        logger.info(f"任务 '{task.name}' 间隔触发将在 {run_time.strftime('%Y-%m-%d %H:%M:%S')} 执行 (delay={delay_seconds}s)")
+
+    @staticmethod
+    def _parse_time(time_value: Optional[str]) -> Tuple[int, int]:
+        if not time_value:
+            return 0, 0
+        try:
+            hour, minute = map(int, time_value.split(':'))
+            if not (0 <= hour < 24 and 0 <= minute < 60):
+                raise ValueError
+            return hour, minute
+        except (ValueError, AttributeError):
+            raise ValueError(f"时间格式无效: {time_value}")
+
+    @staticmethod
+    def _parse_datetime(datetime_value: str) -> datetime:
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+            try:
+                normalized = datetime_value.replace('T', ' ')
+                return datetime.strptime(normalized, fmt)
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(datetime_value)
+        except ValueError as exc:
+            raise ValueError(f"日期时间格式无效: {datetime_value}") from exc
+
+    def _calculate_next_random_time(self, trigger: TriggerConfig, task_name: Optional[str] = None) -> Optional[datetime]:
         """计算下一个随机执行时间"""
         try:
-            start_str = task.trigger.random_start_time
-            end_str = task.trigger.random_end_time
+            start_str = trigger.random_start_time or trigger.start_time
+            end_str = trigger.random_end_time or trigger.end_time
             start_t = time.fromisoformat(start_str)
             end_t = time.fromisoformat(end_str)
             
@@ -285,10 +403,13 @@ class TaskScheduler:
             random_seconds = random.uniform(0, time_diff_seconds)
             return effective_start_dt + timedelta(seconds=random_seconds)
         except (ValueError, AttributeError) as e:
-            logger.error(f"计算任务 '{task.name}' 的随机时间失败: {e}")
+            if task_name:
+                logger.error(f"计算任务 '{task_name}' 的随机时间失败: {e}")
+            else:
+                logger.error(f"计算随机时间失败: {e}")
             return None
 
-    async def _add_task_to_queue(self, task_id: str):
+    async def _add_task_to_queue(self, task_id: str, trigger_key: Optional[str] = None):
         if not self.is_running:
             return
         if self.mode != SchedulerMode.SCHEDULER:
@@ -307,8 +428,28 @@ class TaskScheduler:
         if task.id in self.executor.get_running_tasks():
             logger.warning(f"任务 '{task.name}' 已在运行中，本次调度跳过。")
             return
-        
-        await self.task_queue.put(task)
+        trigger = self.task_triggers.get(trigger_key) if trigger_key else task.primary_trigger
+
+        # 对于间隔/随机触发，立即排定下一次执行
+        if trigger and trigger_key:
+            if trigger.trigger_type == "interval":
+                self._schedule_interval_run(task, trigger_key, trigger, initial=False)
+            elif trigger.trigger_type == "random_time":
+                next_run = self._calculate_next_random_time(trigger, task.name)
+                if next_run:
+                    job_id = f"{trigger_key}:random"
+                    self.scheduler.add_job(
+                        self._add_task_to_queue,
+                        DateTrigger(run_date=next_run),
+                        args=[task.id, trigger_key],
+                        id=job_id,
+                        name=f"{task.name}-random",
+                        replace_existing=True
+                    )
+                    self.job_trigger_lookup[job_id] = trigger_key
+                    logger.info(f"任务 '{task.name}' 下一次随机触发时间: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        await self.task_queue.put(task, trigger_key)
 
     async def _worker_loop(self):
         logger.info("工作进程已启动")
@@ -317,19 +458,21 @@ class TaskScheduler:
                 if self.mode != SchedulerMode.SCHEDULER:
                     await asyncio.sleep(1)
                     continue
-                task = await self.task_queue.get()
-                if not task:
+                task_item = await self.task_queue.get()
+                if not task_item:
                     await asyncio.sleep(1)
                     continue
-                
+                task = task_item.task
+                trigger_key = task_item.trigger_key
+
                 if not await self.resource_manager.can_start_task(task):
                     logger.info(f"资源不足，任务 '{task.name}' 重新加入队列")
                     await asyncio.sleep(5) # 等待资源释放
-                    await self.task_queue.put(task) # 放回队列
+                    await self.task_queue.put(task, trigger_key) # 放回队列
                     continue
                 
                 await self.resource_manager.allocate_resource(task)
-                asyncio.create_task(self._execute_and_handle_completion(task))
+                asyncio.create_task(self._execute_and_handle_completion(task_item))
         except asyncio.CancelledError:
             logger.info("工作进程被取消")
         except Exception as e:
@@ -366,21 +509,102 @@ class TaskScheduler:
         logger.info(f"手动执行任务: {task.name} (ID: {task.id})")
 
         try:
-            asyncio.create_task(self._execute_and_handle_completion(task))
+            asyncio.create_task(self._execute_and_handle_completion(TaskQueueItem(task=task)))
         except Exception as e:
             await self.resource_manager.release_resource(task)
             logger.error(f"创建任务执行协程失败: {e}")
             raise
 
-    async def _execute_and_handle_completion(self, task: TaskConfig):
+    async def _execute_and_handle_completion(self, task_item: TaskQueueItem):
+        task = task_item.task
+        trigger_key = task_item.trigger_key
+        trigger = self.task_triggers.get(trigger_key) if trigger_key else task.primary_trigger
+        retry_key = self._make_retry_key(task.id, trigger_key)
+
+        result = None
         try:
-            await self.executor.execute_task(task)
+            result = await self.executor.execute_task(task)
         except Exception as e:
             logger.error(f"执行任务 '{task.name}' 时发生错误: {e}", exc_info=True)
         finally:
             await self.resource_manager.release_resource(task)
-            # 任务完成后，触发重新调度逻辑
-            await self._on_task_completed(task)
+
+        success = bool(result.success) if result else False
+        if success:
+            self.retry_counters.pop(retry_key, None)
+            self.retry_notified.pop(retry_key, None)
+        else:
+            await self._handle_retry(task, trigger_key, trigger, retry_key)
+
+        await self._handle_post_execution(task, trigger_key, trigger, success)
+
+    def _make_retry_key(self, task_id: str, trigger_key: Optional[str]) -> str:
+        return f"{task_id}:{trigger_key or 'manual'}"
+
+    async def _handle_retry(
+        self,
+        task: TaskConfig,
+        trigger_key: Optional[str],
+        trigger: Optional[TriggerConfig],
+        retry_key: str
+    ):
+        policy = task.retry_policy
+        if not policy.enabled or not trigger_key:
+            self.retry_counters.pop(retry_key, None)
+            self.retry_notified.pop(retry_key, None)
+            return
+
+        max_retries = policy.max_retries
+        if max_retries <= 0:
+            return
+
+        current = self.retry_counters.get(retry_key, 0) + 1
+        self.retry_counters[retry_key] = current
+
+        if policy.notify_after_retries and current >= policy.notify_after_retries and not self.retry_notified.get(retry_key):
+            title = f"任务重试提醒: {task.name}"
+            content = (
+                f"任务 '{task.name}' 连续失败 {current} 次，正在进行自动重试。\n"
+                f"触发器: {trigger.trigger_type if trigger else 'unknown'}\n"
+                f"最大重试次数: {max_retries}"
+            )
+            await notification_service.send_webhook_notification(title, content, "task-retry")
+            self.retry_notified[retry_key] = True
+
+        if current > max_retries:
+            logger.error(f"任务 '{task.name}' 达到最大重试次数 {max_retries}，停止自动重试。")
+            self.retry_counters.pop(retry_key, None)
+            return
+
+        delay = max(policy.delay_seconds, 1)
+        run_time = datetime.now() + timedelta(seconds=delay)
+        job_id = f"{retry_key}:retry"
+        self.scheduler.add_job(
+            self._add_task_to_queue,
+            DateTrigger(run_date=run_time),
+            args=[task.id, trigger_key],
+            id=job_id,
+            name=f"{task.name}-retry",
+            replace_existing=True
+        )
+        self.job_trigger_lookup[job_id] = trigger_key or ""
+        logger.warning(f"任务 '{task.name}' 将在 {delay} 秒后进行第 {current} 次重试")
+
+    async def _handle_post_execution(
+        self,
+        task: TaskConfig,
+        trigger_key: Optional[str],
+        trigger: Optional[TriggerConfig],
+        success: bool
+    ):
+        if not self.is_running or not task.enabled:
+            return
+
+        if trigger_key and trigger:
+            if trigger.trigger_type == "interval":
+                logger.debug(f"任务 '{task.name}' 间隔触发本轮执行{'成功' if success else '失败'}")
+            elif trigger.trigger_type == "random_time":
+                logger.debug(f"任务 '{task.name}' 随机触发本轮执行{'成功' if success else '失败'}")
 
     async def set_mode(self, mode: Union[SchedulerMode, str]):
         if isinstance(mode, str):
@@ -393,6 +617,11 @@ class TaskScheduler:
             return
 
         self.mode = mode
+        # 持久化模式到配置文件
+        config = config_manager.get_config()
+        config.app.mode = self.mode.value
+        config_manager.save_config(config)
+
         if mode == SchedulerMode.SINGLE_TASK:
             await self.task_queue.clear()
             logger.info("调度器已切换到单任务模式，自动调度暂停")
@@ -416,6 +645,7 @@ class TaskScheduler:
             status = self.executor.get_task_status(task.id)
             next_run_time = self.get_task_next_run_time(task.id)
             
+            primary_trigger = task.primary_trigger
             result.append({
                 'id': task.id,
                 'name': task.name,
@@ -423,28 +653,25 @@ class TaskScheduler:
                 'enabled': task.enabled,
                 'priority': task.priority,
                 'resource_group': task.resource_group,
-                'trigger_type': task.trigger.trigger_type,
+                'trigger_type': primary_trigger.trigger_type if primary_trigger else None,
                 'status': status.value,
                 'next_run_time': next_run_time.isoformat() if next_run_time else None
             })
         return result
 
     def get_task_next_run_time(self, task_id: str) -> Optional[datetime]:
-        job = self.scheduler.get_job(task_id)
-        if not job:
+        relevant_jobs = [
+            job for job in self.scheduler.get_jobs()
+            if job.id and job.id.startswith(f"{task_id}:")
+        ]
+
+        if not relevant_jobs:
             return None
 
-        next_time = getattr(job, "next_run_time", None)
-        if not next_time:
-            next_time = getattr(job, "next_fire_time", None)
-
-        if callable(next_time):
-            try:
-                next_time = next_time()
-            except TypeError:
-                next_time = None
-
-        return next_time
+        next_times = [job.next_run_time for job in relevant_jobs if getattr(job, "next_run_time", None)]
+        if not next_times:
+            return None
+        return min(next_times)
 
 # 全局调度器实例
 scheduler = TaskScheduler()

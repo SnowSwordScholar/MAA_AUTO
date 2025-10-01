@@ -4,13 +4,11 @@
 """
 
 import asyncio
-import subprocess
-import os
 import logging
 import shlex
 from collections import deque
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Deque, Any, List
 from datetime import datetime
 from enum import Enum
 
@@ -48,41 +46,40 @@ class TaskExecutor:
         self.running_tasks: Dict[str, asyncio.Task] = {}
         self.task_results: Dict[str, TaskResult] = {}
         self.temp_log_files: Dict[str, Path] = {}
-        self.live_logs: Dict[str, deque[str]] = {}
+        self.live_logs: Dict[str, Deque[str]] = {}
+        self.task_history: Deque[Dict[str, Any]] = deque(maxlen=50)
     
-    async def execute_task(self, task_config: TaskConfig):
+    async def execute_task(self, task_config: TaskConfig) -> TaskResult:
         """执行任务的完整流程"""
         logger.info(f"开始执行任务: {task_config.name} (ID: {task_config.id})")
 
         result = TaskResult(task_config.id, False)
         result.start_time = datetime.now()
-        
-        # 将任务标记为正在运行
-        task_future = asyncio.Future()
-        self.running_tasks[task_config.id] = task_future
+
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            self.running_tasks[task_config.id] = current_task
+
         self.live_logs[task_config.id] = deque(maxlen=500)
 
         try:
-            # 1. 前置任务
             pre_task_success = await self._execute_pre_tasks(task_config)
             if not pre_task_success:
                 raise Exception("前置任务执行失败")
 
-            # 2. 主任务
             success, return_code, stdout, stderr = await self._execute_main_task(task_config)
-            
+
             result.success = success
             result.return_code = return_code
             result.stdout = stdout
             result.stderr = stderr
             result.message = "任务执行成功" if success else f"任务执行失败，返回码: {return_code}"
-            
+
             if success:
                 logger.info(f"任务 '{task_config.name}' 执行成功")
             else:
                 logger.error(f"任务 '{task_config.name}' 执行失败, 返回码: {return_code}\nStderr: {stderr}")
 
-            # 3. 后置任务
             await self._execute_post_tasks(task_config, result)
 
         except asyncio.CancelledError:
@@ -103,13 +100,31 @@ class TaskExecutor:
             result.end_time = datetime.now()
             if result.start_time:
                 result.duration = (result.end_time - result.start_time).total_seconds()
-            
+
             self.task_results[task_config.id] = result
+
+            status = (
+                TaskStatus.COMPLETED.value if result.success
+                else (TaskStatus.CANCELLED.value if result.message == "任务被取消" else TaskStatus.FAILED.value)
+            )
+            history_entry = {
+                "task_id": task_config.id,
+                "task_name": task_config.name,
+                "status": status,
+                "success": result.success,
+                "message": result.message,
+                "resource_group": task_config.resource_group,
+                "start_time": result.start_time.isoformat() if result.start_time else None,
+                "end_time": result.end_time.isoformat() if result.end_time else None,
+                "duration": result.duration,
+                "return_code": result.return_code,
+            }
+            self.task_history.append(history_entry)
+
             if task_config.id in self.running_tasks:
                 self.running_tasks.pop(task_config.id)
-            
-            # 标记任务已完成
-            task_future.set_result(None)
+
+        return result
 
     async def _execute_pre_tasks(self, task_config: TaskConfig) -> bool:
         """执行前置任务，如ADB唤醒"""
@@ -129,6 +144,22 @@ class TaskExecutor:
             # 解锁屏幕（上划）
             await self._run_adb_command(device_id, "input swipe 300 1000 300 500", task_config.id)
             logger.info(f"ADB唤醒/解锁命令已发送至 {device_id}")
+
+            delay = task_config.adb_launch_delay_seconds or 0
+            if delay > 0:
+                logger.info(f"等待 {delay} 秒后执行应用启动命令")
+                await asyncio.sleep(delay)
+
+            if task_config.adb_launch_package:
+                pkg = task_config.adb_launch_package
+                activity = task_config.adb_launch_activity
+                if activity:
+                    component = activity if '/' in activity else f"{pkg}/{activity}"
+                    launch_command = f"am start -n {component}"
+                else:
+                    launch_command = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+                logger.info(f"启动应用命令: {launch_command}")
+                await self._run_adb_command(device_id, launch_command, task_config.id)
             return True
         except Exception as e:
             logger.error(f"ADB前置任务失败: {e}", exc_info=True)
@@ -250,6 +281,11 @@ class TaskExecutor:
                 read_stream(process.stderr, "STDERR", stderr_lines)
             )
             await process.wait()
+        except asyncio.CancelledError:
+            logger.warning(f"命令执行被取消: {command}")
+            process.kill()
+            await process.wait()
+            raise
         finally:
             if log_writer:
                 log_writer.close()
@@ -264,18 +300,15 @@ class TaskExecutor:
         return log_file
 
     async def cancel_task(self, task_id: str) -> bool:
-        if task_id not in self.running_tasks:
+        task = self.running_tasks.get(task_id)
+        if not task:
             return False
-        
-        task_future = self.running_tasks[task_id]
-        task_future.cancel()
+
+        task.cancel()
         try:
-            await task_future
+            await task
         except asyncio.CancelledError:
             logger.info(f"任务 '{task_id}' 已成功取消")
-        finally:
-            if task_id in self.running_tasks:
-                self.running_tasks.pop(task_id)
         return True
 
     def get_task_status(self, task_id: str) -> TaskStatus:
@@ -308,6 +341,11 @@ class TaskExecutor:
         if limit <= 0:
             return list(self.live_logs[task_id])
         return list(self.live_logs[task_id])[-limit:]
+
+    def get_task_history(self, limit: int = 20) -> List[Dict[str, Any]]:
+        if limit <= 0 or limit >= len(self.task_history):
+            return list(self.task_history)[::-1]
+        return list(self.task_history)[-limit:][::-1]
 
 # 全局任务执行器实例
 task_executor = TaskExecutor()

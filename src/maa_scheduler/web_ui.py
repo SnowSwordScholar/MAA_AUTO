@@ -5,7 +5,7 @@ Web 控制界面模块
 
 import logging
 import uuid
-from typing import Dict, List
+from typing import Dict, List, Optional
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -119,10 +119,20 @@ async def get_tasks_with_status():
     for task in tasks:
         status = task_executor.get_task_status(task.id)
         next_run_time = scheduler.get_task_next_run_time(task.id)
-        
+        last_result = task_executor.task_results.get(task.id)
+
         task_dict = task.dict()
         task_dict['status'] = status.value
         task_dict['next_run_time'] = next_run_time.isoformat() if next_run_time else None
+        if last_result:
+            task_dict['last_result'] = {
+                'success': last_result.success,
+                'message': last_result.message,
+                'return_code': last_result.return_code,
+                'start_time': last_result.start_time.isoformat() if last_result.start_time else None,
+                'end_time': last_result.end_time.isoformat() if last_result.end_time else None,
+                'duration': last_result.duration,
+            }
         result.append(task_dict)
     return result
 
@@ -198,6 +208,21 @@ async def run_task_manually(task_id: str):
     except Exception as e:
         logger.error(f"手动执行任务失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="手动执行任务失败，请查看日志")
+
+@app.post("/api/tasks/{task_id}/cancel")
+async def cancel_running_task(task_id: str):
+    """取消正在运行的任务"""
+    try:
+        if task_id not in task_executor.get_running_tasks():
+            raise HTTPException(status_code=409, detail="任务当前未在运行")
+
+        await task_executor.cancel_task(task_id)
+        return {"message": "取消任务请求已发送"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"取消任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="取消任务失败")
 
 # 配置管理
 @app.get("/api/config", response_model=AppConfig)
@@ -281,6 +306,15 @@ async def test_notification():
     except Exception as e:
         logger.error(f"发送测试通知失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"发送测试通知失败: {e}")
+
+@app.get("/api/task-history")
+async def get_task_history(limit: Optional[int] = 20):
+    try:
+        history = task_executor.get_task_history(limit or 20)
+        return history
+    except Exception as e:
+        logger.error(f"获取任务历史失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取任务历史失败")
 
 # 异常处理
 @app.exception_handler(404)
