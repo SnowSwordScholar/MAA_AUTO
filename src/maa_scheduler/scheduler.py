@@ -148,6 +148,8 @@ class TaskScheduler:
         self.retry_notified: Dict[str, bool] = {}
         self.retry_tasks: Dict[str, asyncio.Task] = {}
         self.pending_window_tasks: List[Tuple[str, Optional[str]]] = []
+        self.trigger_last_run: Dict[str, datetime] = {}
+        self.active_trigger_keys: Dict[str, Optional[str]] = {}
 
     async def start(self):
         if self.is_running:
@@ -220,7 +222,12 @@ class TaskScheduler:
                 trigger_key = f"{task.id}:{index}"
                 self.task_triggers[trigger_key] = trigger
                 self._schedule_trigger(task, trigger_key, trigger)
-        
+        valid_trigger_keys = set(self.task_triggers.keys())
+        if self.trigger_last_run:
+            self.trigger_last_run = {
+                key: value for key, value in self.trigger_last_run.items()
+                if key in valid_trigger_keys
+            }
         logger.info(f"已加载并调度 {len(self.scheduler.get_jobs())} 个启用的任务触发器")
 
     def _schedule_trigger(self, task: TaskConfig, trigger_key: str, trigger: TriggerConfig):
@@ -344,7 +351,15 @@ class TaskScheduler:
             delay_seconds = max(interval_minutes * 60, 1)
 
         if initial:
-            delay_seconds = min(delay_seconds, 1)
+            last_run = self.trigger_last_run.get(trigger_key)
+            if last_run:
+                elapsed = max((datetime.now() - last_run).total_seconds(), 0.0)
+                if elapsed < delay_seconds:
+                    delay_seconds = max(delay_seconds - elapsed, 1.0)
+                else:
+                    delay_seconds = 1.0
+            else:
+                delay_seconds = min(delay_seconds, 1.0)
 
         run_time = datetime.now() + timedelta(seconds=delay_seconds)
         job_id = f"{trigger_key}:interval"
@@ -443,6 +458,9 @@ class TaskScheduler:
             logger.warning(f"任务 '{task.name}' 已在运行中，本次调度跳过。")
             return
         trigger = self.task_triggers.get(trigger_key) if trigger_key else task.primary_trigger
+
+        if trigger and trigger.trigger_type == "interval":
+            await self._preempt_lower_priority_tasks(task)
 
         # 对于间隔/随机触发，立即排定下一次执行
         if trigger and trigger_key:
@@ -544,24 +562,36 @@ class TaskScheduler:
                 task.name,
                 retry_count + 1
             )
+        self.active_trigger_keys[task.id] = trigger_key
         try:
-            result = await self.executor.execute_task(task, skip_pre_tasks=skip_pre_tasks)
-        except Exception as e:
-            logger.error(f"执行任务 '{task.name}' 时发生错误: {e}", exc_info=True)
+            try:
+                result = await self.executor.execute_task(task, skip_pre_tasks=skip_pre_tasks)
+            except Exception as e:
+                logger.error(f"执行任务 '{task.name}' 时发生错误: {e}", exc_info=True)
+            finally:
+                await self.resource_manager.release_resource(task)
+
+            if trigger_key:
+                timestamp = result.end_time if result and result.end_time else datetime.now()
+                self.trigger_last_run[trigger_key] = timestamp
+
+            success = bool(result.success) if result else False
+            cancelled = bool(result and result.message == "任务被取消")
+
+            if success:
+                self.retry_counters.pop(retry_key, None)
+                self.retry_notified.pop(retry_key, None)
+                retry_task = self.retry_tasks.pop(retry_key, None)
+                if retry_task:
+                    retry_task.cancel()
+            elif cancelled:
+                logger.info(f"任务 '{task.name}' 被取消，本轮不触发重试")
+            else:
+                await self._handle_retry(task, trigger_key, trigger, retry_key)
+
+            await self._handle_post_execution(task, trigger_key, trigger, success)
         finally:
-            await self.resource_manager.release_resource(task)
-
-        success = bool(result.success) if result else False
-        if success:
-            self.retry_counters.pop(retry_key, None)
-            self.retry_notified.pop(retry_key, None)
-            retry_task = self.retry_tasks.pop(retry_key, None)
-            if retry_task:
-                retry_task.cancel()
-        else:
-            await self._handle_retry(task, trigger_key, trigger, retry_key)
-
-        await self._handle_post_execution(task, trigger_key, trigger, success)
+            self.active_trigger_keys.pop(task.id, None)
 
     def _make_retry_key(self, task_id: str, trigger_key: Optional[str]) -> str:
         return f"{task_id}:{trigger_key or 'manual'}"
@@ -629,6 +659,52 @@ class TaskScheduler:
         finally:
             self.retry_tasks.pop(retry_key, None)
 
+    async def _preempt_lower_priority_tasks(self, incoming_task: TaskConfig):
+        if not self.is_running:
+            return
+
+        running_ids = self.executor.get_running_tasks()
+        if not running_ids:
+            return
+
+        for running_id in running_ids:
+            if running_id == incoming_task.id:
+                continue
+
+            running_trigger_key = self.active_trigger_keys.get(running_id)
+            if not running_trigger_key:
+                continue
+
+            running_task = self.task_configs.get(running_id)
+            if not running_task:
+                continue
+
+            if running_task.resource_group != incoming_task.resource_group:
+                continue
+
+            if running_task.priority <= incoming_task.priority:
+                continue
+
+            running_trigger = self.task_triggers.get(running_trigger_key)
+            if not running_trigger or running_trigger.trigger_type != "scheduled":
+                continue
+
+            if not self._is_time_window_active(running_trigger.start_time, running_trigger.end_time):
+                continue
+
+            logger.info(
+                "高优先级任务 '%s' 正在抢占资源，取消时间段任务 '%s'",
+                incoming_task.name,
+                running_task.name
+            )
+            if not await self.executor.cancel_task(running_id):
+                logger.warning("无法取消正在运行的任务 '%s'，继续执行", running_task.name)
+                continue
+
+            pair = (running_task.id, running_trigger_key)
+            if pair not in self.pending_window_tasks:
+                self.pending_window_tasks.append(pair)
+
     async def _flush_pending_window_tasks(self):
         if not self.pending_window_tasks:
             return
@@ -681,6 +757,9 @@ class TaskScheduler:
                 logger.debug(f"任务 '{task.name}' 间隔触发本轮执行{'成功' if success else '失败'}")
             elif trigger.trigger_type == "random_time":
                 logger.debug(f"任务 '{task.name}' 随机触发本轮执行{'成功' if success else '失败'}")
+
+        if trigger and trigger.trigger_type == "interval" and self.pending_window_tasks:
+            await self._flush_pending_window_tasks()
 
     async def set_mode(self, mode: Union[SchedulerMode, str]):
         if isinstance(mode, str):
