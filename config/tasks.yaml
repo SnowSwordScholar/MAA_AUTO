@@ -26,7 +26,7 @@ tasks:
   resource_group: camera
   main_command: echo '模拟 MAA 任务执行' && sleep 5 && echo '任务完成, 但有一个error' && echo '任务真的完成了'
   enable_adb_wakeup: true
-  adb_device_id: 127.0.0.1:5555
+  adb_device_id: 127.0.0.1:35555
   enable_global_log: true
   enable_temp_log: true
   trigger:

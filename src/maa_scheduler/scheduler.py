@@ -6,7 +6,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, time
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Set, Optional, Union
 from enum import Enum
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -52,6 +52,11 @@ class TaskQueue:
     
     def size(self) -> int:
         return len(self.queue)
+
+    async def clear(self):
+        async with self.lock:
+            self.queue.clear()
+            logger.info("任务队列已清空")
 
 class ResourceManager:
     """资源管理器"""
@@ -134,6 +139,9 @@ class TaskScheduler:
         
         logger.info("启动任务调度器")
         await self.reload_tasks()
+        if self.mode != SchedulerMode.SCHEDULER:
+            logger.info("启动调度器时自动切换到自动调度模式")
+            self.mode = SchedulerMode.SCHEDULER
         self.scheduler.start()
         self.worker_task = asyncio.create_task(self._worker_loop())
         self.is_running = True
@@ -281,7 +289,11 @@ class TaskScheduler:
             return None
 
     async def _add_task_to_queue(self, task_id: str):
-        if not self.is_running: return
+        if not self.is_running:
+            return
+        if self.mode != SchedulerMode.SCHEDULER:
+            logger.debug("当前为单任务模式，跳过自动调度任务: %s", task_id)
+            return
         
         task = self.task_configs.get(task_id)
         if not task:
@@ -302,6 +314,9 @@ class TaskScheduler:
         logger.info("工作进程已启动")
         try:
             while self.is_running:
+                if self.mode != SchedulerMode.SCHEDULER:
+                    await asyncio.sleep(1)
+                    continue
                 task = await self.task_queue.get()
                 if not task:
                     await asyncio.sleep(1)
@@ -321,6 +336,42 @@ class TaskScheduler:
             logger.error(f"工作进程异常: {e}", exc_info=True)
         logger.info("工作进程已停止")
 
+    async def run_task_once(self, task: TaskConfig):
+        """在当前模式下立即执行一个任务，遵循资源组约束"""
+        if task is None:
+            raise ValueError("任务配置不存在，无法执行")
+
+        if self.is_running and self.mode != SchedulerMode.SINGLE_TASK:
+            raise RuntimeError("调度器正在运行，请先停止调度器或切换到单任务模式")
+
+        # 确保资源分组信息已加载
+        if not self.resource_manager.resource_groups:
+            self.resource_manager.load_resource_groups(config_manager.get_config())
+
+        if task.id in self.executor.get_running_tasks():
+            raise RuntimeError("任务已在执行中")
+
+        if not await self.resource_manager.can_start_task(task):
+            raise RuntimeError("所属资源组正在忙，请稍后再试")
+
+        # 缓存任务配置供状态查询使用
+        self.task_configs[task.id] = task
+
+        try:
+            await self.resource_manager.allocate_resource(task)
+        except Exception as e:
+            logger.error(f"分配任务资源失败: {e}")
+            raise RuntimeError("资源分配失败，请检查资源组配置") from e
+
+        logger.info(f"手动执行任务: {task.name} (ID: {task.id})")
+
+        try:
+            asyncio.create_task(self._execute_and_handle_completion(task))
+        except Exception as e:
+            await self.resource_manager.release_resource(task)
+            logger.error(f"创建任务执行协程失败: {e}")
+            raise
+
     async def _execute_and_handle_completion(self, task: TaskConfig):
         try:
             await self.executor.execute_task(task)
@@ -330,6 +381,23 @@ class TaskScheduler:
             await self.resource_manager.release_resource(task)
             # 任务完成后，触发重新调度逻辑
             await self._on_task_completed(task)
+
+    async def set_mode(self, mode: Union[SchedulerMode, str]):
+        if isinstance(mode, str):
+            try:
+                mode = SchedulerMode(mode)
+            except ValueError as exc:
+                raise ValueError(f"不支持的调度模式: {mode}") from exc
+
+        if self.mode == mode:
+            return
+
+        self.mode = mode
+        if mode == SchedulerMode.SINGLE_TASK:
+            await self.task_queue.clear()
+            logger.info("调度器已切换到单任务模式，自动调度暂停")
+        else:
+            logger.info("调度器已切换到自动调度模式")
 
     def get_scheduler_status(self) -> Dict:
         return {

@@ -499,7 +499,8 @@
 			return;
 		}
 
-		const mode = systemStatus?.mode || 'scheduler';
+		const schedulerRunning = systemStatus?.is_running ?? true;
+		const manualAllowed = !schedulerRunning || systemStatus?.mode === 'single_task';
 		tbody.innerHTML = filteredTasks.map(task => {
 			const status = task.status || 'pending';
 			const statusBadge = statusColors[status] || 'secondary';
@@ -507,7 +508,7 @@
 			const triggerType = task.trigger?.trigger_type || task.trigger_type || '-';
 			const nextRunTime = formatDateTime(task.next_run_time);
 			const resourceGroup = task.resource_group || '-';
-			const canManualRun = mode === 'single_task' && status !== 'running';
+			const canManualRun = manualAllowed && status !== 'running';
 
 			const descriptionLine = task.description
 				? `<small class="text-muted">${escapeHtml(task.description)}</small>`
@@ -905,7 +906,8 @@
 	function updateTaskDetailActions(taskId) {
 		const listTask = tasks.find(task => task.id === taskId);
 		const status = listTask ? listTask.status : 'pending';
-		const mode = systemStatus?.mode || 'scheduler';
+		const schedulerRunning = systemStatus?.is_running ?? true;
+		const manualAllowed = !schedulerRunning || systemStatus?.mode === 'single_task';
 
 		const runBtn = document.getElementById('run-task-btn');
 		const cancelBtn = document.getElementById('cancel-task-btn');
@@ -913,7 +915,7 @@
 		if (status === 'running') {
 			runBtn.style.display = 'none';
 			cancelBtn.style.display = 'inline-block';
-		} else if (mode === 'single_task') {
+		} else if (manualAllowed) {
 			runBtn.style.display = 'inline-block';
 			cancelBtn.style.display = 'none';
 		} else {
@@ -923,8 +925,10 @@
 	}
 
 	async function runTask(taskId) {
-		if (systemStatus?.mode !== 'single_task') {
-			showToast('需要在单任务模式下才能手动执行任务', 'warning');
+		const schedulerRunning = systemStatus?.is_running ?? true;
+		const manualAllowed = !schedulerRunning || systemStatus?.mode === 'single_task';
+		if (!manualAllowed) {
+			showToast('请先停止调度器或切换到单任务模式后再手动执行任务', 'warning');
 			return;
 		}
 

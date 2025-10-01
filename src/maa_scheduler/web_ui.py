@@ -5,7 +5,6 @@ Web 控制界面模块
 
 import logging
 import uuid
-import asyncio
 from typing import Dict, List
 from pathlib import Path
 
@@ -13,9 +12,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from .config import AppConfig, TaskConfig, config_manager
-from .scheduler import scheduler
+from .scheduler import scheduler, SchedulerMode
 from .executor import task_executor
 from .notification import notification_service
 
@@ -65,6 +65,46 @@ async def settings_page(request: Request):
 async def get_status():
     """获取系统状态"""
     return scheduler.get_scheduler_status()
+
+
+class ModeUpdate(BaseModel):
+    mode: SchedulerMode
+
+
+@app.post("/api/scheduler/start")
+async def start_scheduler():
+    try:
+        await scheduler.start()
+        return {"message": "调度器已启动", "status": scheduler.get_scheduler_status()}
+    except Exception as e:
+        logger.error(f"启动调度器失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="启动调度器失败")
+
+
+@app.post("/api/scheduler/stop")
+async def stop_scheduler():
+    try:
+        await scheduler.stop()
+        return {"message": "调度器已停止", "status": scheduler.get_scheduler_status()}
+    except Exception as e:
+        logger.error(f"停止调度器失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="停止调度器失败")
+
+
+@app.post("/api/scheduler/mode")
+async def change_scheduler_mode(payload: ModeUpdate):
+    try:
+        await scheduler.set_mode(payload.mode)
+        mode_text = "自动调度" if payload.mode == SchedulerMode.SCHEDULER else "单任务"
+        return {
+            "message": f"已切换到{mode_text}模式",
+            "status": scheduler.get_scheduler_status()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"切换调度模式失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="切换调度模式失败")
 
 @app.get("/api/resource-groups")
 async def get_resource_groups():
@@ -148,21 +188,17 @@ async def run_task_manually(task_id: str):
         task = config_manager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
-        # 手动执行任务，绕过调度器
-        asyncio.create_task(scheduler._execute_and_handle_completion(task))
+
+        await scheduler.run_task_once(task)
         return {"message": "任务已开始手动执行"}
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        logger.warning(f"手动执行任务失败: {e}")
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         logger.error(f"手动执行任务失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"手动执行任务失败: {e}")
-
-@app.post("/api/tasks/{task_id}/cancel")
-async def cancel_task(task_id: str):
-    """取消正在运行的任务"""
-    success = await task_executor.cancel_task(task_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="任务未在运行中或无法取消")
-    return {"message": "任务取消请求已发送"}
+        raise HTTPException(status_code=500, detail="手动执行任务失败，请查看日志")
 
 # 配置管理
 @app.get("/api/config", response_model=AppConfig)
