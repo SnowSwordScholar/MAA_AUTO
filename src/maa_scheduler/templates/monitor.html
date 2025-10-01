@@ -253,7 +253,7 @@
     // 刷新所有数据
     async function refreshAll() {
         await Promise.all([
-            updateSystemStatus(),
+            updateMonitorSummary(),
             updateResourceGroups(),
             updateRunningTasks(),
             updateTaskHistory(),
@@ -264,7 +264,7 @@
     }
 
     // 更新系统状态
-    async function updateSystemStatus() {
+    async function updateMonitorSummary() {
         try {
             const status = await apiRequest('/api/status');
             

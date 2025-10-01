@@ -1,37 +1,9 @@
 tasks:
-- id: test-console-task
-  name: 控制台测试任务
-  description: 简单的控制台命令测试
-  enabled: true
-  priority: 5
-  resource_group: default
-  main_command: echo '控制台任务执行成功' && date
-  enable_adb_wakeup: false
-  enable_resolution_switch: false
-  enable_global_log: true
-  enable_temp_log: true
-  triggers:
-  - trigger_type: interval
-    interval_minutes: 5
-    days_of_week: []
-    days_of_month: []
-    specific_datetimes: []
-  retry_policy:
-    enabled: false
-    max_retries: 0
-    delay_seconds: 60
-    rerun_pre_tasks: true
-  post_task:
-    log_keywords: []
-    push_notification:
-      enabled: false
-      on_success: false
-      on_failure: false
 - id: test-maa-task
   name: 肉鸽 Sami
   description: ''
   enabled: true
-  priority: 3
+  priority: 5
   resource_group: redroid
   main_command: /root/.cargo/bin/maa roguelike Sami -v
   enable_adb_wakeup: true
@@ -46,7 +18,7 @@ tasks:
   triggers:
   - trigger_type: scheduled
     start_time: 04:00
-    end_time: '23:59'
+    end_time: 03:59
     days_of_week: []
     days_of_month: []
     specific_datetimes: []

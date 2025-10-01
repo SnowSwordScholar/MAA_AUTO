@@ -146,6 +146,8 @@ class TaskScheduler:
         self.job_trigger_lookup: Dict[str, str] = {}
         self.retry_counters: Dict[str, int] = {}
         self.retry_notified: Dict[str, bool] = {}
+        self.retry_tasks: Dict[str, asyncio.Task] = {}
+        self.pending_window_tasks: List[Tuple[str, Optional[str]]] = []
 
     async def start(self):
         if self.is_running:
@@ -160,8 +162,9 @@ class TaskScheduler:
             self.mode = SchedulerMode.SCHEDULER
         await self.reload_tasks()
         self.scheduler.start()
-        self.worker_task = asyncio.create_task(self._worker_loop())
         self.is_running = True
+        await self._flush_pending_window_tasks()
+        self.worker_task = asyncio.create_task(self._worker_loop())
         logger.info(f"任务调度器已成功启动 (当前模式: {self.mode.value})")
 
     async def stop(self):
@@ -196,6 +199,12 @@ class TaskScheduler:
         self.task_triggers.clear()
         self.retry_counters.clear()
         self.retry_notified.clear()
+        if self.retry_tasks:
+            for task in self.retry_tasks.values():
+                task.cancel()
+            await asyncio.gather(*self.retry_tasks.values(), return_exceptions=True)
+            self.retry_tasks.clear()
+        self.pending_window_tasks.clear()
         self.task_configs = {task.id: task for task in config.tasks}
 
         for task in self.task_configs.values():
@@ -238,6 +247,11 @@ class TaskScheduler:
                     replace_existing=True
                 )
                 register_job(job_id)
+                if self._is_time_window_active(trigger.start_time, trigger.end_time):
+                    if self.is_running:
+                        asyncio.create_task(self._add_task_to_queue(task.id, trigger_key))
+                    else:
+                        self.pending_window_tasks.append((task.id, trigger_key))
             except ValueError as e:
                 logger.error(f"任务 '{task.name}' 的定时触发器格式无效: {e}")
         elif ttype == "interval":
@@ -541,6 +555,9 @@ class TaskScheduler:
         if success:
             self.retry_counters.pop(retry_key, None)
             self.retry_notified.pop(retry_key, None)
+            retry_task = self.retry_tasks.pop(retry_key, None)
+            if retry_task:
+                retry_task.cancel()
         else:
             await self._handle_retry(task, trigger_key, trigger, retry_key)
 
@@ -557,7 +574,7 @@ class TaskScheduler:
         retry_key: str
     ):
         policy = task.retry_policy
-        if not policy.enabled or not trigger_key:
+        if not policy.enabled:
             self.retry_counters.pop(retry_key, None)
             self.retry_notified.pop(retry_key, None)
             return
@@ -585,18 +602,69 @@ class TaskScheduler:
             return
 
         delay = max(policy.delay_seconds, 1)
-        run_time = datetime.now() + timedelta(seconds=delay)
-        job_id = f"{retry_key}:retry"
-        self.scheduler.add_job(
-            self._add_task_to_queue,
-            DateTrigger(run_date=run_time),
-            args=[task.id, trigger_key],
-            id=job_id,
-            name=f"{task.name}-retry",
-            replace_existing=True
-        )
-        self.job_trigger_lookup[job_id] = trigger_key or ""
+        if retry_key in self.retry_tasks:
+            self.retry_tasks[retry_key].cancel()
+        retry_task = asyncio.create_task(self._retry_after_delay(task, trigger_key, retry_key, delay))
+        self.retry_tasks[retry_key] = retry_task
         logger.warning(f"任务 '{task.name}' 将在 {delay} 秒后进行第 {current} 次重试")
+
+    async def _retry_after_delay(self, task: TaskConfig, trigger_key: Optional[str], retry_key: str, delay: int):
+        try:
+            await asyncio.sleep(delay)
+            if not task.enabled:
+                logger.info(f"任务 '{task.name}' 已禁用，取消后续重试")
+                return
+
+            if self.is_running and self.mode == SchedulerMode.SCHEDULER:
+                await self.task_queue.put(task, trigger_key)
+            else:
+                logger.info(f"调度器当前未处于自动模式，对任务 '{task.name}' 进行手动重试")
+                try:
+                    await self.run_task_once(task)
+                except Exception as exc:
+                    logger.error(f"手动重试任务 '{task.name}' 失败: {exc}", exc_info=True)
+        except asyncio.CancelledError:
+            logger.debug(f"任务 '{task.name}' 的重试计划已取消")
+            raise
+        finally:
+            self.retry_tasks.pop(retry_key, None)
+
+    async def _flush_pending_window_tasks(self):
+        if not self.pending_window_tasks:
+            return
+        for task_id, trigger_key in self.pending_window_tasks:
+            task = self.task_configs.get(task_id)
+            if not task or not task.enabled:
+                continue
+            await self.task_queue.put(task, trigger_key)
+        self.pending_window_tasks.clear()
+
+    @staticmethod
+    def _is_time_window_active(start_time: Optional[str], end_time: Optional[str]) -> bool:
+        if not start_time:
+            return False
+        try:
+            start = time.fromisoformat(start_time)
+        except ValueError:
+            return False
+
+        now = datetime.now().time()
+
+        if not end_time:
+            return now.hour == start.hour and now.minute == start.minute
+
+        try:
+            end = time.fromisoformat(end_time)
+        except ValueError:
+            return False
+
+        if start == end:
+            return True
+
+        if start < end:
+            return start <= now <= end
+
+        return now >= start or now <= end
 
     async def _handle_post_execution(
         self,

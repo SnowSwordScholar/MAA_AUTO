@@ -8,7 +8,7 @@ import logging
 import shlex
 from collections import deque
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Deque, Any, List
+from typing import Dict, Optional, Tuple, Deque, Any, List, Set
 from datetime import datetime
 from enum import Enum
 
@@ -52,6 +52,7 @@ class TaskExecutor:
             self.last_known_resolution: Optional[str] = config_manager.get_config().app.last_device_resolution
         except Exception:
             self.last_known_resolution = None
+        self.connected_devices: Set[str] = set()
     
     async def execute_task(self, task_config: TaskConfig, *, skip_pre_tasks: bool = False) -> TaskResult:
         """执行任务的完整流程"""
@@ -135,6 +136,12 @@ class TaskExecutor:
 
     async def _execute_pre_tasks(self, task_config: TaskConfig) -> bool:
         """执行前置任务，如分辨率调整和ADB唤醒"""
+        device_id = task_config.adb_device_id
+        if device_id:
+            connected = await self._ensure_adb_connection(device_id, task_config.id)
+            if not connected:
+                return False
+
         if task_config.enable_resolution_switch and task_config.target_resolution:
             resolution_ok = await self._ensure_target_resolution(task_config)
             if not resolution_ok:
@@ -142,8 +149,7 @@ class TaskExecutor:
 
         if not task_config.enable_adb_wakeup:
             return True
-        
-        device_id = task_config.adb_device_id
+
         if not device_id:
             logger.warning(f"任务 '{task_config.name}' 启用了ADB唤醒但未配置设备ID，跳过操作。")
             return True
@@ -176,6 +182,29 @@ class TaskExecutor:
         except Exception as e:
             logger.error(f"ADB前置任务失败: {e}", exc_info=True)
             return False
+
+    async def _ensure_adb_connection(self, device_id: str, task_id: Optional[str] = None) -> bool:
+        """确保已通过 adb connect 连接到指定设备"""
+        if device_id in self.connected_devices:
+            return True
+
+        adb_path = config_manager.get_config().app.adb_path or "adb"
+        adb_exec = shlex.quote(adb_path)
+        safe_device = shlex.quote(device_id)
+        command = f"{adb_exec} connect {safe_device}"
+        logger.info(f"尝试连接 ADB 设备: {device_id}")
+        success, return_code, _, stderr = await self._run_shell_command(
+            command,
+            enable_global_log=False,
+            task_id=task_id
+        )
+        if success:
+            logger.info(f"ADB 设备 '{device_id}' 连接成功")
+            self.connected_devices.add(device_id)
+            return True
+
+        logger.error(f"ADB 设备 '{device_id}' 连接失败 (返回码 {return_code}): {stderr}")
+        return False
 
     async def _ensure_target_resolution(self, task_config: TaskConfig) -> bool:
         """在执行前确保设备分辨率符合任务要求"""
