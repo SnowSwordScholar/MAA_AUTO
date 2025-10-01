@@ -150,6 +150,7 @@ class TaskScheduler:
         self.pending_window_tasks: List[Tuple[str, Optional[str]]] = []
         self.trigger_last_run: Dict[str, datetime] = {}
         self.active_trigger_keys: Dict[str, Optional[str]] = {}
+    self.preempted_tasks: Set[str] = set()
 
     async def start(self):
         if self.is_running:
@@ -563,6 +564,7 @@ class TaskScheduler:
                 retry_count + 1
             )
         self.active_trigger_keys[task.id] = trigger_key
+        preempted = False
         try:
             try:
                 result = await self.executor.execute_task(task, skip_pre_tasks=skip_pre_tasks)
@@ -571,12 +573,18 @@ class TaskScheduler:
             finally:
                 await self.resource_manager.release_resource(task)
 
-            if trigger_key:
+            if task.id in self.preempted_tasks:
+                preempted = True
+                self.preempted_tasks.discard(task.id)
+                if result:
+                    result.message = "任务被高优先级任务抢占，等待窗口恢复"
+
+            if trigger_key and not preempted:
                 timestamp = result.end_time if result and result.end_time else datetime.now()
                 self.trigger_last_run[trigger_key] = timestamp
 
             success = bool(result.success) if result else False
-            cancelled = bool(result and result.message == "任务被取消")
+            cancelled = bool(result and result.message == "任务被取消") and not preempted
 
             if success:
                 self.retry_counters.pop(retry_key, None)
@@ -586,7 +594,7 @@ class TaskScheduler:
                     retry_task.cancel()
             elif cancelled:
                 logger.info(f"任务 '{task.name}' 被取消，本轮不触发重试")
-            else:
+            elif not preempted:
                 await self._handle_retry(task, trigger_key, trigger, retry_key)
 
             await self._handle_post_execution(task, trigger_key, trigger, success)
@@ -697,7 +705,9 @@ class TaskScheduler:
                 incoming_task.name,
                 running_task.name
             )
-            if not await self.executor.cancel_task(running_id):
+            self.preempted_tasks.add(running_id)
+            if not await self.executor.cancel_task(running_id, reason="preempt"):
+                self.preempted_tasks.discard(running_id)
                 logger.warning("无法取消正在运行的任务 '%s'，继续执行", running_task.name)
                 continue
 

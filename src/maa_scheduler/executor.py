@@ -53,6 +53,7 @@ class TaskExecutor:
         except Exception:
             self.last_known_resolution = None
         self.connected_devices: Set[str] = set()
+        self.cancellation_reasons: Dict[str, str] = {}
     
     async def execute_task(self, task_config: TaskConfig, *, skip_pre_tasks: bool = False) -> TaskResult:
         """执行任务的完整流程"""
@@ -91,10 +92,15 @@ class TaskExecutor:
             await self._execute_post_tasks(task_config, result)
 
         except asyncio.CancelledError:
+            reason = getattr(self, "cancellation_reasons", {}).get(task_config.id)
             result.success = False
-            result.message = "任务被取消"
-            logger.warning(f"任务 '{task_config.name}' 已被取消")
-            await notification_service.notify_task_status(task_config, "任务被取消")
+            if reason == "preempt":
+                result.message = "任务被高优先级任务抢占，等待窗口恢复"
+                logger.info(f"任务 '{task_config.name}' 因高优先级任务抢占而暂停")
+            else:
+                result.message = "任务被取消"
+                logger.warning(f"任务 '{task_config.name}' 已被取消")
+                await notification_service.notify_task_status(task_config, "任务被取消")
         except Exception as e:
             result.success = False
             result.message = f"任务执行异常: {e}"
@@ -131,6 +137,8 @@ class TaskExecutor:
 
             if task_config.id in self.running_tasks:
                 self.running_tasks.pop(task_config.id)
+            if hasattr(self, "cancellation_reasons"):
+                self.cancellation_reasons.pop(task_config.id, None)
 
         return result
 
@@ -377,16 +385,22 @@ class TaskExecutor:
         log_file = log_dir / f"task_{task_id}_{timestamp}.log"
         return log_file
 
-    async def cancel_task(self, task_id: str) -> bool:
+    async def cancel_task(self, task_id: str, *, reason: str = "manual") -> bool:
         task = self.running_tasks.get(task_id)
         if not task:
             return False
 
+        if not hasattr(self, "cancellation_reasons"):
+            self.cancellation_reasons: Dict[str, str] = {}
+        self.cancellation_reasons[task_id] = reason
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
-            logger.info(f"任务 '{task_id}' 已成功取消")
+            if reason == "preempt":
+                logger.info(f"任务 '{task_id}' 被高优先级任务抢占，已暂停执行")
+            else:
+                logger.info(f"任务 '{task_id}' 已成功取消")
         return True
 
     def get_task_status(self, task_id: str) -> TaskStatus:
