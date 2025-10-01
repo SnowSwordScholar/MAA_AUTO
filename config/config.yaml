@@ -4,7 +4,10 @@ app:
   notification:
     notify_on_startup: false
     notify_on_shutdown: false
+    notify_on_task_cancel: false
+    cancel_notification_tag: task-cancel
   adb_path: /bin/adb
+  last_device_resolution: 1920x1080
 web:
   host: 0.0.0.0
   port: 8080

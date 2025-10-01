@@ -522,8 +522,16 @@ class TaskScheduler:
         retry_key = self._make_retry_key(task.id, trigger_key)
 
         result = None
+        retry_count = self.retry_counters.get(retry_key, 0)
+        skip_pre_tasks = retry_count > 0 and not task.retry_policy.rerun_pre_tasks
+        if skip_pre_tasks:
+            logger.info(
+                "任务 '%s' 第 %d 次尝试时跳过前置任务以加速重试",
+                task.name,
+                retry_count + 1
+            )
         try:
-            result = await self.executor.execute_task(task)
+            result = await self.executor.execute_task(task, skip_pre_tasks=skip_pre_tasks)
         except Exception as e:
             logger.error(f"执行任务 '{task.name}' 时发生错误: {e}", exc_info=True)
         finally:

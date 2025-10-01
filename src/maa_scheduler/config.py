@@ -18,6 +18,8 @@ class NotificationConfig(BaseModel):
     """通知开关配置"""
     notify_on_startup: bool = Field(default=False, description="启动时通知")
     notify_on_shutdown: bool = Field(default=False, description="关闭时通知")
+    notify_on_task_cancel: bool = Field(default=True, description="任务取消时通知")
+    cancel_notification_tag: str = Field(default="task-cancel", description="任务取消通知的频道/Tag")
 
 class AppSettings(BaseModel):
     """应用设置"""
@@ -25,6 +27,7 @@ class AppSettings(BaseModel):
     task_timeout: int = Field(default=3600, description="任务超时时间(秒)")
     notification: NotificationConfig = Field(default_factory=NotificationConfig, description="通知设置")
     adb_path: str = Field(default="adb", description="ADB 可执行文件路径")
+    last_device_resolution: Optional[str] = Field(default=None, description="最近一次设置的设备分辨率")
 
 class WebSettings(BaseModel):
     """Web界面配置"""
@@ -94,6 +97,7 @@ class RetryPolicy(BaseModel):
         ge=1,
         description="达到指定失败次数后发送通知"
     )
+    rerun_pre_tasks: bool = Field(default=True, description="重试时是否重新执行前置任务")
 
 class KeywordNotificationConfig(BaseModel):
     """关键词匹配通知配置"""
@@ -131,6 +135,8 @@ class TaskConfig(BaseModel):
     # 前置任务
     enable_adb_wakeup: bool = Field(default=False, description="是否启用ADB唤醒屏幕")
     adb_device_id: Optional[str] = Field(default=None, description="ADB设备ID")
+    enable_resolution_switch: bool = Field(default=False, description="在执行前是否调整分辨率")
+    target_resolution: Optional[str] = Field(default=None, description="目标分辨率，格式 1080x1920")
     
     # 日志选项
     enable_global_log: bool = Field(default=True, description="是否输出到全局日志")

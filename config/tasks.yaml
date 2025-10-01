@@ -7,6 +7,7 @@ tasks:
   resource_group: default
   main_command: echo '控制台任务执行成功' && date
   enable_adb_wakeup: false
+  enable_resolution_switch: false
   enable_global_log: true
   enable_temp_log: true
   triggers:
@@ -19,6 +20,7 @@ tasks:
     enabled: false
     max_retries: 0
     delay_seconds: 60
+    rerun_pre_tasks: true
   post_task:
     log_keywords: []
     push_notification:
@@ -34,6 +36,8 @@ tasks:
   main_command: /root/.cargo/bin/maa roguelike Sami -v
   enable_adb_wakeup: true
   adb_device_id: 127.0.0.1:35555
+  enable_resolution_switch: true
+  target_resolution: 1920x1080
   enable_global_log: true
   enable_temp_log: true
   adb_launch_delay_seconds: 3
@@ -42,7 +46,7 @@ tasks:
   triggers:
   - trigger_type: scheduled
     start_time: 04:00
-    end_time: 03:00
+    end_time: '23:59'
     days_of_week: []
     days_of_month: []
     specific_datetimes: []
@@ -51,12 +55,50 @@ tasks:
     max_retries: 10
     delay_seconds: 60
     notify_after_retries: 3
+    rerun_pre_tasks: true
   post_task:
     log_keywords: []
     push_notification:
-      enabled: true
+      enabled: false
       on_success: false
-      on_failure: true
-      title: MAA任务执行失败
-      tag: MAA
-      content: MAA任务 {task_name} 执行失败，请检查设备状态
+      on_failure: false
+- id: 54729451-d4e8-451e-9f2c-9edb79888be2
+  name: 公招
+  description: ''
+  enabled: true
+  priority: 3
+  resource_group: redroid
+  main_command: cd /Task/MAA/Python && /root/.local/bin/uv run python Recruit.py
+  enable_adb_wakeup: true
+  adb_device_id: 127.0.0.1:35555
+  enable_resolution_switch: true
+  target_resolution: 1920x1080
+  enable_global_log: true
+  enable_temp_log: true
+  adb_launch_delay_seconds: 3
+  adb_launch_package: com.hypergryph.arknights
+  adb_launch_activity: com.hypergryph.arknights/com.u8.sdk.U8UnityContext
+  triggers:
+  - trigger_type: interval
+    interval_minutes: 600
+    days_of_week: []
+    days_of_month: []
+    specific_datetimes: []
+  retry_policy:
+    enabled: true
+    max_retries: 3
+    delay_seconds: 60
+    notify_after_retries: 3
+    rerun_pre_tasks: true
+  post_task:
+    log_keywords:
+    - 资深感觉
+    - 高级资深干员
+    keyword_notification:
+      title: 关键词匹配通知
+      tag: MAA公招
+      content: '在任务日志中匹配到关键词: {keywords}'
+    push_notification:
+      enabled: false
+      on_success: false
+      on_failure: false

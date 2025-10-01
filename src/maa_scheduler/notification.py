@@ -18,8 +18,8 @@ class NotificationService:
         self._webhook_config = None
 
     def _load_config(self):
-        if not self._webhook_config:
-            self._webhook_config = config_manager.get_config().webhook
+        # 始终加载最新配置，避免缓存导致更新后的配置不生效
+        self._webhook_config = config_manager.get_config().webhook
         return self._webhook_config
 
     async def send_webhook_notification(
@@ -66,10 +66,20 @@ class NotificationService:
 
     async def notify_task_status(self, task_config: TaskConfig, status: str):
         """任务状态通用通知"""
+        app_config = config_manager.get_config().app
+        notification_cfg = getattr(app_config, "notification", None)
+
+        tag = None
+        if status == "任务被取消":
+            if not getattr(notification_cfg, "notify_on_task_cancel", True):
+                logger.debug("任务取消通知已禁用，跳过发送。")
+                return False
+            tag = getattr(notification_cfg, "cancel_notification_tag", "task-cancel") or "task-cancel"
+
         title = f"任务 {status}: {task_config.name}"
         content = f"任务 '{task_config.name}' (ID: {task_config.id}) 已{status}。"
-        tag = f"task-{status.lower()}"
-        await self.send_webhook_notification(title, content, tag)
+        resolved_tag = tag or f"task-{status.lower()}"
+        return await self.send_webhook_notification(title, content, resolved_tag)
 
     async def notify_scheduler_status(self, status: str, message: str = ""):
         """调度器状态通知"""

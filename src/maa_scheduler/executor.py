@@ -48,8 +48,12 @@ class TaskExecutor:
         self.temp_log_files: Dict[str, Path] = {}
         self.live_logs: Dict[str, Deque[str]] = {}
         self.task_history: Deque[Dict[str, Any]] = deque(maxlen=50)
+        try:
+            self.last_known_resolution: Optional[str] = config_manager.get_config().app.last_device_resolution
+        except Exception:
+            self.last_known_resolution = None
     
-    async def execute_task(self, task_config: TaskConfig) -> TaskResult:
+    async def execute_task(self, task_config: TaskConfig, *, skip_pre_tasks: bool = False) -> TaskResult:
         """执行任务的完整流程"""
         logger.info(f"开始执行任务: {task_config.name} (ID: {task_config.id})")
 
@@ -63,9 +67,12 @@ class TaskExecutor:
         self.live_logs[task_config.id] = deque(maxlen=500)
 
         try:
-            pre_task_success = await self._execute_pre_tasks(task_config)
-            if not pre_task_success:
-                raise Exception("前置任务执行失败")
+            if skip_pre_tasks:
+                logger.info(f"任务 '{task_config.name}' 在本次尝试中跳过前置任务执行")
+            else:
+                pre_task_success = await self._execute_pre_tasks(task_config)
+                if not pre_task_success:
+                    raise Exception("前置任务执行失败")
 
             success, return_code, stdout, stderr = await self._execute_main_task(task_config)
 
@@ -127,7 +134,12 @@ class TaskExecutor:
         return result
 
     async def _execute_pre_tasks(self, task_config: TaskConfig) -> bool:
-        """执行前置任务，如ADB唤醒"""
+        """执行前置任务，如分辨率调整和ADB唤醒"""
+        if task_config.enable_resolution_switch and task_config.target_resolution:
+            resolution_ok = await self._ensure_target_resolution(task_config)
+            if not resolution_ok:
+                return False
+
         if not task_config.enable_adb_wakeup:
             return True
         
@@ -163,6 +175,43 @@ class TaskExecutor:
             return True
         except Exception as e:
             logger.error(f"ADB前置任务失败: {e}", exc_info=True)
+            return False
+
+    async def _ensure_target_resolution(self, task_config: TaskConfig) -> bool:
+        """在执行前确保设备分辨率符合任务要求"""
+        device_id = task_config.adb_device_id
+        target_raw = task_config.target_resolution or ""
+        target = target_raw.lower().replace("×", "x").strip()
+
+        if not device_id:
+            logger.error(f"任务 '{task_config.name}' 配置了分辨率调整但缺少ADB设备ID")
+            return False
+
+        if "x" not in target:
+            logger.error(f"任务 '{task_config.name}' 的目标分辨率格式无效: {target_raw}")
+            return False
+
+        if self.last_known_resolution == target:
+            logger.debug(f"任务 '{task_config.name}' 所需分辨率 {target} 已生效，跳过调整")
+            return True
+
+        logger.info(
+            "调整任务 '%s' 设备 %s 分辨率: %s -> %s",
+            task_config.name,
+            device_id,
+            self.last_known_resolution or "未知",
+            target
+        )
+        try:
+            await self._run_adb_command(device_id, f"wm size {target}", task_config.id)
+            self.last_known_resolution = target
+            app_config = config_manager.get_config()
+            if getattr(app_config.app, "last_device_resolution", None) != target:
+                app_config.app.last_device_resolution = target
+                config_manager.save_config(app_config)
+            return True
+        except Exception as e:
+            logger.error(f"调整分辨率失败: {e}", exc_info=True)
             return False
 
     async def _execute_main_task(self, task_config: TaskConfig) -> Tuple[bool, int, str, str]:

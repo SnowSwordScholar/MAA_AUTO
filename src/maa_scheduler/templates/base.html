@@ -109,9 +109,6 @@
                         <button class="btn btn-danger btn-sm" id="btn-stop-scheduler">
                             <i class="bi bi-stop-fill"></i> 停止调度器
                         </button>
-                        <button class="btn btn-warning btn-sm" id="btn-test-notification">
-                            <i class="bi bi-bell-fill"></i> 测试通知
-                        </button>
                     </div>
                     
                     <!-- 模式切换 -->
@@ -284,16 +281,6 @@
                     } catch (error) {
                         console.error('停止调度器失败:', error);
                     }
-                }
-            });
-
-            // 测试通知
-            document.getElementById('btn-test-notification').addEventListener('click', async function() {
-                try {
-                    await apiRequest('/api/test-notification', { method: 'POST' });
-                    showToast('测试通知已发送', 'success');
-                } catch (error) {
-                    console.error('发送测试通知失败:', error);
                 }
             });
 
