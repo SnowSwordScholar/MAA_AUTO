@@ -199,6 +199,22 @@ async def get_task_logs(task_id: str, lines: int = 100):
         logger.error(f"获取任务日志失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="获取任务日志失败")
 
+
+@app.get("/api/tasks/{task_id}/logs/live")
+async def get_live_task_logs(task_id: str, limit: int = 200):
+    """获取任务的实时日志缓冲"""
+    try:
+        lines = task_executor.get_live_logs(task_id, limit)
+        status = task_executor.get_task_status(task_id)
+        return {
+            "lines": lines,
+            "count": len(lines),
+            "status": status.value if status else None
+        }
+    except Exception as e:
+        logger.error(f"获取实时日志失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取实时日志失败")
+
 @app.get("/api/logs")
 async def get_main_log(limit: int = 100):
     """获取主日志文件内容"""

@@ -347,6 +347,25 @@ localhost</textarea>
                 </div>
             </div>
         </div>
+
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-usb-plug"></i> ADB 设置</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="adb-settings-form">
+                            <div class="mb-3">
+                                <label class="form-label">ADB 可执行文件路径</label>
+                                <input type="text" class="form-control" name="adb_path" placeholder="例如: /usr/bin/adb 或 adb">
+                                <small class="form-text text-muted">用于前置唤醒/解锁操作的 ADB 命令路径，留空则使用系统默认。</small>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <!-- 数据管理 -->
         <div class="row mt-4">
@@ -465,6 +484,8 @@ localhost</textarea>
         setInputValue('input[name="web_host"]', web.host ?? '127.0.0.1');
         setInputValue('input[name="web_port"]', web.port ?? 8080);
         setCheckboxValue('input[name="debug"]', web.debug ?? false);
+
+    setInputValue('input[name="adb_path"]', app.adb_path ?? 'adb');
 
         const schedulerEnabled = scheduler.enabled !== undefined ? scheduler.enabled : app.mode !== 'single_task';
         setCheckboxValue('input[name="scheduler_enabled"]', schedulerEnabled);
@@ -639,6 +660,7 @@ localhost</textarea>
             if (!updatedConfig.app.notification) updatedConfig.app.notification = {};
             if (!updatedConfig.web) updatedConfig.web = {};
             if (!updatedConfig.logging) updatedConfig.logging = {};
+            if (!updatedConfig.app) updatedConfig.app = {};
 
             // 基础设置
             const generalForm = document.getElementById('general-settings-form');
@@ -725,6 +747,12 @@ localhost</textarea>
             }
 
             updatedConfig.resource_groups = collectResourceGroups();
+
+            const adbForm = document.getElementById('adb-settings-form');
+            if (adbForm) {
+                const adbPathInput = adbForm.querySelector('input[name="adb_path"]');
+                updatedConfig.app.adb_path = (adbPathInput?.value || '').trim() || 'adb';
+            }
 
             if (!Array.isArray(updatedConfig.resource_groups) || updatedConfig.resource_groups.length === 0) {
                 updatedConfig.resource_groups = [

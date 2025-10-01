@@ -82,7 +82,7 @@ class SchedulerApplication:
             logger.info("收到中断信号，准备关闭...")
         except Exception as e:
             logger.error(f"调度器运行异常: {e}", exc_info=True)
-            await notification_service.notify_system_error("调度器异常", str(e))
+            await notification_service.notify_system_error("调度器异常", str(e), category="scheduler-error")
         finally:
             await self._shutdown()
     
@@ -148,7 +148,7 @@ class SchedulerApplication:
             logger.info("收到中断信号，准备关闭...")
         except Exception as e:
             logger.error(f"服务运行异常: {e}", exc_info=True)
-            await notification_service.notify_system_error("服务异常", str(e))
+            await notification_service.notify_system_error("服务异常", str(e), category="service-error")
         finally:
             await self._shutdown()
     

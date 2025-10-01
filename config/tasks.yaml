@@ -15,11 +15,9 @@ tasks:
   post_task:
     log_keywords: []
     push_notification:
-      enabled: true
-      on_success: true
-      on_failure: true
-      title: 任务 {task_name} {status}
-      content: 任务 {task_name} 执行{status}了。
+      enabled: false
+      on_success: false
+      on_failure: false
 - id: test-maa-task
   name: MAA测试任务
   description: MAA任务示例，带ADB唤醒功能

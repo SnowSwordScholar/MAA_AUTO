@@ -24,6 +24,7 @@ class AppSettings(BaseModel):
     mode: Literal["scheduler", "single_task"] = Field(default="scheduler", description="调度器模式")
     task_timeout: int = Field(default=3600, description="任务超时时间(秒)")
     notification: NotificationConfig = Field(default_factory=NotificationConfig, description="通知设置")
+    adb_path: str = Field(default="adb", description="ADB 可执行文件路径")
 
 class WebSettings(BaseModel):
     """Web界面配置"""

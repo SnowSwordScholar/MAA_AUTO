@@ -7,12 +7,14 @@ import asyncio
 import subprocess
 import os
 import logging
+import shlex
+from collections import deque
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 from datetime import datetime
 from enum import Enum
 
-from .config import TaskConfig
+from .config import TaskConfig, config_manager
 from .notification import notification_service
 
 logger = logging.getLogger(__name__)
@@ -46,21 +48,21 @@ class TaskExecutor:
         self.running_tasks: Dict[str, asyncio.Task] = {}
         self.task_results: Dict[str, TaskResult] = {}
         self.temp_log_files: Dict[str, Path] = {}
+        self.live_logs: Dict[str, deque[str]] = {}
     
     async def execute_task(self, task_config: TaskConfig):
         """执行任务的完整流程"""
         logger.info(f"开始执行任务: {task_config.name} (ID: {task_config.id})")
-        
+
         result = TaskResult(task_config.id, False)
         result.start_time = datetime.now()
         
         # 将任务标记为正在运行
         task_future = asyncio.Future()
         self.running_tasks[task_config.id] = task_future
+        self.live_logs[task_config.id] = deque(maxlen=500)
 
         try:
-            await notification_service.notify_task_status(task_config, "任务开始")
-            
             # 1. 前置任务
             pre_task_success = await self._execute_pre_tasks(task_config)
             if not pre_task_success:
@@ -92,7 +94,11 @@ class TaskExecutor:
             result.success = False
             result.message = f"任务执行异常: {e}"
             logger.error(f"任务 '{task_config.name}' 执行异常: {e}", exc_info=True)
-            await notification_service.notify_system_error(f"任务 '{task_config.name}' 异常", str(e))
+            await notification_service.notify_system_error(
+                f"任务 '{task_config.name}' 异常",
+                str(e),
+                category="task-error"
+            )
         finally:
             result.end_time = datetime.now()
             if result.start_time:
@@ -118,10 +124,10 @@ class TaskExecutor:
         logger.info(f"为任务 '{task_config.name}' 执行ADB唤醒，设备: {device_id}")
         try:
             # 唤醒设备
-            await self._run_adb_command(device_id, "input keyevent KEYCODE_WAKEUP")
+            await self._run_adb_command(device_id, "input keyevent KEYCODE_WAKEUP", task_config.id)
             await asyncio.sleep(0.5)
             # 解锁屏幕（上划）
-            await self._run_adb_command(device_id, "input swipe 300 1000 300 500")
+            await self._run_adb_command(device_id, "input swipe 300 1000 300 500", task_config.id)
             logger.info(f"ADB唤醒/解锁命令已发送至 {device_id}")
             return True
         except Exception as e:
@@ -138,7 +144,8 @@ class TaskExecutor:
         return await self._run_shell_command(
             task_config.main_command,
             log_file=log_file,
-            enable_global_log=task_config.enable_global_log
+            enable_global_log=task_config.enable_global_log,
+            task_id=task_config.id
         )
 
     async def _execute_post_tasks(self, task_config: TaskConfig, result: TaskResult):
@@ -185,15 +192,25 @@ class TaskExecutor:
             
             await notification_service.send_webhook_notification(title, content, tag)
 
-    async def _run_adb_command(self, device_id: str, command: str):
+    async def _run_adb_command(self, device_id: str, command: str, task_id: Optional[str] = None):
         """运行ADB命令并处理错误"""
-        full_command = f"adb -s {device_id} {command}"
-        success, _, _, stderr = await self._run_shell_command(full_command, enable_global_log=False)
+        adb_path = config_manager.get_config().app.adb_path or "adb"
+        adb_exec = shlex.quote(adb_path)
+        full_command = f"{adb_exec} -s {device_id} {command}"
+        success, _, _, stderr = await self._run_shell_command(
+            full_command,
+            enable_global_log=False,
+            task_id=task_id
+        )
         if not success:
             raise Exception(f"ADB命令执行失败: {full_command}\n错误: {stderr}")
 
     async def _run_shell_command(
-        self, command: str, log_file: Optional[Path] = None, enable_global_log: bool = True
+        self,
+        command: str,
+        log_file: Optional[Path] = None,
+        enable_global_log: bool = True,
+        task_id: Optional[str] = None
     ) -> Tuple[bool, int, str, str]:
         """健壮的 Shell 命令执行器"""
         logger.debug(f"Executing command: {command}")
@@ -215,10 +232,15 @@ class TaskExecutor:
                 line = line_bytes.decode('utf-8', errors='ignore').strip()
                 output_list.append(line)
                 if enable_global_log:
-                    logger.info(f"[{stream_name}] {line}")
+                    if task_id:
+                        logger.info(f"[{task_id}] [{stream_name}] {line}")
+                    else:
+                        logger.info(f"[{stream_name}] {line}")
                 if log_writer:
                     log_writer.write(f"[{datetime.now().isoformat()}] [{stream_name}] {line}\n")
                     log_writer.flush()
+                if task_id:
+                    self._append_live_log(task_id, f"[{stream_name}] {line}")
 
         stdout_lines, stderr_lines = [], []
         try:
@@ -273,6 +295,18 @@ class TaskExecutor:
 
     def get_temp_log_file(self, task_id: str) -> Optional[Path]:
         return self.temp_log_files.get(task_id)
+
+    def _append_live_log(self, task_id: str, line: str):
+        if task_id not in self.live_logs:
+            self.live_logs[task_id] = deque(maxlen=500)
+        self.live_logs[task_id].append(line)
+
+    def get_live_logs(self, task_id: str, limit: int = 200) -> list[str]:
+        if task_id not in self.live_logs:
+            return []
+        if limit <= 0:
+            return list(self.live_logs[task_id])
+        return list(self.live_logs[task_id])[-limit:]
 
 # 全局任务执行器实例
 task_executor = TaskExecutor()

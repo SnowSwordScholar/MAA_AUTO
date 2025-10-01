@@ -15,6 +15,30 @@
 			</button>
 		</div>
 	</div>
+
+	<style>
+		.task-modal-body {
+			max-height: calc(100vh - 220px);
+			overflow-y: auto;
+		}
+
+		#taskLogContent {
+			background-color: #1e1e1e;
+			color: #dcdcdc;
+			font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+			font-size: 0.85rem;
+			white-space: pre-wrap;
+			word-break: break-word;
+			max-height: calc(100vh - 200px);
+			overflow-y: auto;
+			padding: 1rem;
+			border-radius: 0.5rem;
+		}
+
+		#taskLogHeader small {
+			font-size: 0.8rem;
+		}
+	</style>
 </div>
 
 <div class="row g-3 mb-4">
@@ -71,6 +95,32 @@
 	</div>
 </div>
 
+<div class="offcanvas offcanvas-end" tabindex="-1" id="taskLogOffcanvas" data-bs-scroll="true">
+	<div class="offcanvas-header">
+		<div>
+			<h5 class="offcanvas-title" id="taskLogTitle">任务实时日志</h5>
+			<small class="text-muted" id="taskLogSubtitle"></small>
+		</div>
+		<button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="关闭"></button>
+	</div>
+	<div class="offcanvas-body">
+		<div class="d-flex justify-content-between align-items-center mb-2">
+			<div>
+				<span class="badge bg-primary" id="taskLogStatus">-</span>
+			</div>
+			<div class="btn-group btn-group-sm">
+				<button class="btn btn-outline-secondary" id="taskLogRefreshBtn">
+					<i class="bi bi-arrow-clockwise"></i> 手动刷新
+				</button>
+				<button class="btn btn-outline-danger" id="taskLogClearBtn">
+					<i class="bi bi-x-circle"></i> 清屏
+				</button>
+			</div>
+		</div>
+		<div id="taskLogContent" class="border"></div>
+	</div>
+</div>
+
 <div class="modal fade" id="taskDetailModal" tabindex="-1" aria-hidden="true">
 	<div class="modal-dialog modal-lg modal-dialog-scrollable">
 		<div class="modal-content">
@@ -105,7 +155,7 @@
 					<h5 class="modal-title" id="taskModalLabel">创建任务</h5>
 					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
 				</div>
-				<div class="modal-body">
+				<div class="modal-body task-modal-body">
 					<input type="hidden" id="taskId">
 
 					<div class="row g-3">
@@ -319,6 +369,9 @@
 	let currentTaskId = null;
 	let taskModalInstance = null;
 	let taskFormElement = null;
+	let logPollingTimer = null;
+	let activeLogTaskId = null;
+	let logOffcanvasInstance = null;
 
 	const statusColors = {
 		pending: 'secondary',
@@ -472,6 +525,12 @@
 				   </button>`
 				: '';
 
+			const logBtn = task.enable_global_log
+				? `<button class="btn btn-outline-dark" onclick="openTaskLogs('${task.id}')" title="实时日志">
+						<i class="bi bi-terminal"></i>
+				   </button>`
+				: '';
+
 			return `
 				<tr>
 					<td>
@@ -488,6 +547,7 @@
 							<button class="btn btn-outline-primary" onclick="viewTask('${task.id}')" title="查看详情">
 								<i class="bi bi-eye"></i>
 							</button>
+							${logBtn}
 							${runBtn}
 							${cancelBtn}
 							<button class="btn btn-outline-secondary" onclick="editTask('${task.id}')" title="编辑">
@@ -976,6 +1036,97 @@
 		taskModalInstance.show();
 	}
 
+	function clearLogViewerContent() {
+		const contentEl = document.getElementById('taskLogContent');
+		if (contentEl) {
+			contentEl.textContent = '';
+		}
+	}
+
+	function updateLogStatusBadge(status) {
+		const badge = document.getElementById('taskLogStatus');
+		const color = statusColors[status] || 'secondary';
+		const text = statusTexts[status] || status || '-';
+		if (badge) {
+			badge.textContent = text;
+			badge.className = `badge bg-${color}`;
+		}
+	}
+
+	async function loadTaskLogs(taskId, manual = false) {
+		if (!taskId) {
+			return;
+		}
+		try {
+			const data = await apiRequest(`/api/tasks/${taskId}/logs/live?limit=200`);
+			const lines = Array.isArray(data?.lines) ? data.lines : [];
+			const contentElement = document.getElementById('taskLogContent');
+			if (contentElement) {
+				contentElement.textContent = lines.length ? lines.join('\n') : '暂无日志输出';
+				contentElement.scrollTop = contentElement.scrollHeight;
+			}
+
+			updateLogStatusBadge(data?.status);
+
+			const subtitleElement = document.getElementById('taskLogSubtitle');
+			if (subtitleElement) {
+				const timestamp = new Date().toLocaleTimeString();
+				subtitleElement.textContent = `更新于 ${timestamp} · 最新 ${lines.length} 行`;
+			}
+
+			if (manual) {
+				showToast('日志已刷新', 'info');
+			}
+		} catch (error) {
+			console.error('刷新实时日志失败:', error);
+		}
+	}
+
+	function stopLogPolling() {
+		if (logPollingTimer) {
+			clearInterval(logPollingTimer);
+			logPollingTimer = null;
+		}
+	}
+
+	function startLogPolling() {
+		stopLogPolling();
+		logPollingTimer = setInterval(() => {
+			if (activeLogTaskId) {
+				loadTaskLogs(activeLogTaskId);
+			}
+		}, 3000);
+	}
+
+	function openTaskLogs(taskId) {
+		const task = tasks.find(item => item.id === taskId);
+		if (!task) {
+			showToast('无法找到该任务的配置', 'warning');
+			return;
+		}
+
+		activeLogTaskId = taskId;
+		if (!logOffcanvasInstance) {
+			logOffcanvasInstance = new bootstrap.Offcanvas(document.getElementById('taskLogOffcanvas'));
+		}
+
+		const titleElement = document.getElementById('taskLogTitle');
+		const subtitleElement = document.getElementById('taskLogSubtitle');
+		if (titleElement) {
+			titleElement.textContent = `${task.name} - 实时日志`;
+		}
+		if (subtitleElement) {
+			subtitleElement.textContent = '正在加载日志...';
+		}
+
+		updateLogStatusBadge(task.status);
+		clearLogViewerContent();
+
+		logOffcanvasInstance.show();
+		loadTaskLogs(taskId);
+		startLogPolling();
+	}
+
 	document.addEventListener('DOMContentLoaded', () => {
 		taskFormElement = document.getElementById('taskForm');
 		taskModalInstance = new bootstrap.Modal(document.getElementById('taskModal'));
@@ -1009,6 +1160,28 @@
 
 		document.getElementById('taskDetailModal').addEventListener('hidden.bs.modal', () => {
 			currentTaskId = null;
+		});
+
+		const offcanvasElement = document.getElementById('taskLogOffcanvas');
+		offcanvasElement.addEventListener('hidden.bs.offcanvas', () => {
+			stopLogPolling();
+			activeLogTaskId = null;
+			clearLogViewerContent();
+			updateLogStatusBadge(null);
+			const subtitleElement = document.getElementById('taskLogSubtitle');
+			if (subtitleElement) {
+				subtitleElement.textContent = '';
+			}
+		});
+
+		document.getElementById('taskLogRefreshBtn').addEventListener('click', () => {
+			if (activeLogTaskId) {
+				loadTaskLogs(activeLogTaskId, true);
+			}
+		});
+
+		document.getElementById('taskLogClearBtn').addEventListener('click', () => {
+			clearLogViewerContent();
 		});
 
 		taskFormElement.addEventListener('submit', event => {

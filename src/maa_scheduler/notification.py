@@ -81,14 +81,15 @@ class NotificationService:
 {message}"""
         await self.send_webhook_notification(title, content, "scheduler-status")
 
-    async def notify_system_error(self, error_type: str, error_message: str):
+    async def notify_system_error(self, error_type: str, error_message: str, category: str = "system-error"):
         """系统错误通知"""
         title = f"系统错误: {error_type}"
         content = f"""系统发生严重错误。
 
+**分类**: {category}
 **类型**: {error_type}
 **信息**: {error_message}"""
-        await self.send_webhook_notification(title, content, "system-error")
+        await self.send_webhook_notification(title, content, category or "system-error")
 
 # 全局通知服务实例
 notification_service = NotificationService()
