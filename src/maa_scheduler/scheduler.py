@@ -150,7 +150,7 @@ class TaskScheduler:
         self.pending_window_tasks: List[Tuple[str, Optional[str]]] = []
         self.trigger_last_run: Dict[str, datetime] = {}
         self.active_trigger_keys: Dict[str, Optional[str]] = {}
-    self.preempted_tasks: Set[str] = set()
+        self.preempted_tasks: Set[str] = set()
 
     async def start(self):
         if self.is_running:

@@ -74,3 +74,106 @@ tasks:
       enabled: false
       on_success: false
       on_failure: false
+- id: 2c06ec56-e832-4212-aad6-31bad0d8ed30
+  name: 开始一天清理任务
+  description: ''
+  enabled: true
+  priority: 2
+  resource_group: redroid
+  main_command: cd /Task/MAA/Python && /root/.local/bin/uv run python StartOneDay.py
+  enable_adb_wakeup: true
+  adb_device_id: 127.0.0.1:35555
+  enable_resolution_switch: true
+  target_resolution: 1920x1080
+  enable_global_log: true
+  enable_temp_log: true
+  adb_launch_delay_seconds: 3
+  adb_launch_package: com.hypergryph.arknights
+  adb_launch_activity: com.hypergryph.arknights/com.u8.sdk.U8UnityContext
+  triggers:
+  - trigger_type: random_time
+    random_start_time: 04:30
+    random_end_time: 05:00
+    days_of_week: []
+    days_of_month: []
+    specific_datetimes: []
+  retry_policy:
+    enabled: true
+    max_retries: 3
+    delay_seconds: 60
+    notify_after_retries: 3
+    rerun_pre_tasks: true
+  post_task:
+    log_keywords: []
+    push_notification:
+      enabled: false
+      on_success: false
+      on_failure: false
+- id: c405bbf3-89cf-4b70-bd0c-2e61ae478b38
+  name: 结束一天清理体力
+  description: ''
+  enabled: true
+  priority: 2
+  resource_group: redroid
+  main_command: cd /Task/MAA/Python && /root/.local/bin/uv run python EndOneDay.py
+  enable_adb_wakeup: true
+  adb_device_id: 127.0.0.1:35555
+  enable_resolution_switch: true
+  target_resolution: 1920x1080
+  enable_global_log: true
+  enable_temp_log: true
+  adb_launch_delay_seconds: 3
+  adb_launch_package: com.hypergryph.arknights
+  adb_launch_activity: com.hypergryph.arknights/com.u8.sdk.U8UnityContext
+  triggers:
+  - trigger_type: random_time
+    random_start_time: 03:00
+    random_end_time: 03:30
+    days_of_week: []
+    days_of_month: []
+    specific_datetimes: []
+  retry_policy:
+    enabled: true
+    max_retries: 3
+    delay_seconds: 60
+    notify_after_retries: 3
+    rerun_pre_tasks: true
+  post_task:
+    log_keywords: []
+    push_notification:
+      enabled: false
+      on_success: false
+      on_failure: false
+- id: 673f4a04-0653-4bd0-8e49-97a82b654e99
+  name: 蔚蓝档案清体力
+  description: ''
+  enabled: true
+  priority: 2
+  resource_group: redroid
+  main_command: cd /Task/BAAH ; /root/.local/bin/uv run python3 main.py task.json
+  enable_adb_wakeup: true
+  adb_device_id: 127.0.0.1:35555
+  enable_resolution_switch: true
+  target_resolution: 1280x720
+  enable_global_log: true
+  enable_temp_log: true
+  adb_launch_delay_seconds: 3
+  triggers:
+  - trigger_type: random_time
+    random_start_time: 04:00
+    random_end_time: 04:10
+    days_of_week: []
+    days_of_month: []
+    specific_datetimes: []
+  retry_policy:
+    enabled: true
+    max_retries: 3
+    delay_seconds: 60
+    notify_after_retries: 3
+    rerun_pre_tasks: true
+  post_task:
+    log_keywords: []
+    push_notification:
+      enabled: false
+      on_success: false
+      on_failure: false
