@@ -1,15 +1,24 @@
-# MAA任务调度器
+# MAA/BAAH 任务调度器
 
-> 基于systemctl的开机自启动任务自动化程序
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/uv-managed-36393f?logo=astral&logoColor=white)](https://github.com/astral-sh/uv)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-一个功能完整的企业级任务调度系统，专为MAA自动化任务设计，支持Web管理界面、多种触发器类型、资源管理和实时监控。
+[:us: English README](README_en.md)
+
+> 基于 systemd 的终端程序调度与自启动方案
+
+项目最初用于调度 MAA 自动化任务，如今已扩展到 BAAH 以及其他可部署的终端程序。通过统一的队列、触发器和 Web 管理界面，可以在同一套流程里排程多种脚本或命令行工具。
+
+
 
 ## 功能特性
 
 ### 核心功能
-- **灵活的任务调度**: 支持 Cron 定时、间隔执行、随机时间三种触发方式
+- **灵活的任务调度**: 时间段、间隔执行、随机时间三种触发方式
 - **资源分组管理**: 防止硬件资源冲突，支持并发控制
 - **任务队列系统**: 基于优先级的智能任务调度
+- **可扩展任务类型**: 通过配置即可接入任意 CLI/脚本任务（含 MAA、BAAH 等）
 - **智能重试策略**: 支持失败重试与时间窗口内的成功重试配置
 - **实时监控**: Web 界面实时显示任务状态和系统信息
 - **日志管理**: 全局日志和任务独立日志，支持关键词监控
@@ -17,8 +26,8 @@
 - **模式切换**: 自动调度模式和单任务手动执行模式
 
 ### 任务类型支持
-- **普通任务**: 执行任意命令和脚本
-- **模拟器任务**: 自动控制 ADB 设备，设置分辨率，启动应用
+- **普通任务**: 执行任意命令和脚本，可用于 BAAH 或其他终端工具
+- **模拟器任务**: 自动控制 ADB 设备，设置分辨率，启动应用（常用于 MAA）
 
 ### Web 控制界面
 - 任务管理：创建、编辑、删除、执行任务
@@ -51,6 +60,11 @@ WEBHOOK_UID=your_uid
 WEBHOOK_TOKEN=your_token
 WEBHOOK_BASE_URL=https://your_uid.push.ft07.com/send/your_token.send
 ```
+
+3. 编辑任务配置（`config/tasks.yaml`）：
+   - 为 MAA 任务保留原有的触发器与资源组设置；
+   - 针对 BAAH 或其他命令行程序，填写对应的执行命令和运行参数；
+   - 所有任务都可复用相同的重试策略与通知机制。
 
 ### 3. 安装依赖
 
@@ -164,108 +178,7 @@ sudo systemctl start maa-scheduler.service
 sudo systemctl status maa-scheduler.service
 ```
 
-## 配置说明
 
-### 应用配置 (config/app.yaml)
-
-```yaml
-app_name: "MAA Scheduler"
-version: "0.1.0"
-debug: false
-web_host: "127.0.0.1"
-web_port: 8080
-scheduler_enabled: true
-max_workers: 4
-task_timeout: 3600
-log_level: "INFO"
-log_file: "logs/maa_scheduler.log"
-
-resource_groups:
-  - name: "camera"
-    description: "摄像头资源组"
-    max_concurrent: 1
-    resources: ["camera", "adb"]
-  
-  - name: "gpu"
-    description: "GPU 资源组" 
-    max_concurrent: 1
-    resources: ["gpu", "cuda"]
-  
-  - name: "general"
-    description: "通用资源组"
-    max_concurrent: 2
-    resources: []
-```
-
-### 任务配置示例
-
-```yaml
-- id: "daily-signin"
-  name: "每日签到任务"
-  description: "自动执行游戏签到"
-  enabled: true
-  priority: 5
-  resource_group: "camera"
-  
-  trigger:
-    trigger_type: "cron"
-    cron_expression: "0 9 * * *"  # 每天9点执行
-  
-  is_emulator_task: true
-  emulator_device_id: "127.0.0.1:5555"
-  target_resolution: "1920x1080"
-  startup_app: "com.hypergryph.arknights"
-  
-  main_command: "maa run daily-signin"
-  working_directory: "/path/to/maa"
-  
-  enable_global_log: true
-  enable_temp_log: true
-  
-  notify_on_success: false
-  notify_on_failure: true
-  failure_message: "签到任务执行失败，请检查"
-  
-  log_keywords: ["error", "failed", "exception"]
-  keyword_notification: true
-  keyword_message: "签到任务出现异常"
-```
-
-## 触发器类型
-
-### 1. Cron 定时触发器
-使用标准的 Cron 表达式定义执行时间：
-
-```yaml
-trigger:
-  trigger_type: "cron"
-  cron_expression: "0 9 * * *"  # 每天9点
-```
-
-常用 Cron 表达式：
-- `0 */2 * * *` - 每2小时执行
-- `0 9,21 * * *` - 每天9点和21点执行
-- `0 9 * * 1-5` - 工作日9点执行
-
-### 2. 间隔触发器
-基于上次执行时间的间隔触发：
-
-```yaml
-trigger:
-  trigger_type: "interval"
-  interval_seconds: 7200  # 每2小时执行
-```
-
-### 3. 随机时间触发器
-在指定时间段内随机选择执行时间：
-
-```yaml
-trigger:
-  trigger_type: "random"
-  random_start_time: "09:00"
-  random_end_time: "12:00"
-  random_distribution: "uniform"
-```
 
 ## API 接口
 
@@ -327,6 +240,11 @@ src/maa_scheduler/
 ├── executor.py         # 任务执行器
 ├── notification.py     # 通知服务
 ├── web_ui.py          # Web 界面
+├── static
+│   ├── css
+│   │   └── main.css
+│   └── js
+│       └── i18n.js    # 多语言
 └── templates/         # HTML 模板
     ├── base.html
     ├── index.html
