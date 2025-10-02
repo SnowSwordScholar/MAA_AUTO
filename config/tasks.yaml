@@ -28,6 +28,8 @@ tasks:
     delay_seconds: 60
     notify_after_retries: 3
     rerun_pre_tasks: true
+    retry_on_success_within_window: true
+    success_retry_delay_seconds: 0
   post_task:
     log_keywords: []
     push_notification:
@@ -62,6 +64,7 @@ tasks:
     delay_seconds: 60
     notify_after_retries: 3
     rerun_pre_tasks: true
+    retry_on_success_within_window: false
   post_task:
     log_keywords:
     - 资深感觉
@@ -103,6 +106,7 @@ tasks:
     delay_seconds: 60
     notify_after_retries: 3
     rerun_pre_tasks: true
+    retry_on_success_within_window: false
   post_task:
     log_keywords: []
     push_notification:
@@ -138,6 +142,7 @@ tasks:
     delay_seconds: 60
     notify_after_retries: 3
     rerun_pre_tasks: true
+    retry_on_success_within_window: false
   post_task:
     log_keywords: []
     push_notification:
@@ -171,6 +176,7 @@ tasks:
     delay_seconds: 60
     notify_after_retries: 3
     rerun_pre_tasks: true
+    retry_on_success_within_window: false
   post_task:
     log_keywords: []
     push_notification:

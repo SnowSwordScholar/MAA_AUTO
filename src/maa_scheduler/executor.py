@@ -41,6 +41,7 @@ class TaskResult:
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
         self.duration: Optional[float] = None
+        self.metadata: Dict[str, Any] = {}
 
 class TaskExecutor:
     """任务执行器"""
@@ -58,12 +59,20 @@ class TaskExecutor:
         self.connected_devices: Set[str] = set()
         self.cancellation_reasons: Dict[str, str] = {}
     
-    async def execute_task(self, task_config: TaskConfig, *, skip_pre_tasks: bool = False) -> TaskResult:
+    async def execute_task(
+        self,
+        task_config: TaskConfig,
+        *,
+        skip_pre_tasks: bool = False,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> TaskResult:
         """执行任务的完整流程"""
         logger.info(f"开始执行任务: {task_config.name} (ID: {task_config.id})")
 
         result = TaskResult(task_config.id, False)
         result.start_time = datetime.now()
+        if metadata:
+            result.metadata = dict(metadata)
 
         current_task = asyncio.current_task()
         if current_task is not None:
@@ -124,6 +133,9 @@ class TaskExecutor:
                 TaskStatus.COMPLETED.value if result.success
                 else (TaskStatus.CANCELLED.value if result.message == "任务被取消" else TaskStatus.FAILED.value)
             )
+            metadata_source = metadata if metadata is not None else result.metadata
+            metadata_copy = dict(metadata_source) if metadata_source else {}
+
             history_entry = {
                 "task_id": task_config.id,
                 "task_name": task_config.name,
@@ -135,6 +147,13 @@ class TaskExecutor:
                 "end_time": result.end_time.isoformat() if result.end_time else None,
                 "duration": result.duration,
                 "return_code": result.return_code,
+                "origin": metadata_copy.get("origin"),
+                "trigger_key": metadata_copy.get("trigger_key"),
+                "trigger_type": metadata_copy.get("trigger_type"),
+                "retry_attempt": metadata_copy.get("retry_attempt"),
+                "success_retry_attempt": metadata_copy.get("success_retry_attempt"),
+                "manual": metadata_copy.get("manual", False),
+                "metadata": metadata_copy,
             }
             self.task_history.append(history_entry)
 

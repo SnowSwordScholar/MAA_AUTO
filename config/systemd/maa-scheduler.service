@@ -1,0 +1,21 @@
+[Unit]
+Description=MAA Task Scheduler Service
+After=network-online.target
+Wants=network-online.target
+
+# 请根据部署环境调整 User/Group/ExecStart 等字段
+[Service]
+Type=simple
+User=maa
+Group=maa
+WorkingDirectory=/Task/MAA_Auto
+Environment=PATH=/home/maa/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=UV_ACTIVE=1
+ExecStart=/home/maa/.local/bin/uv run python -m src.maa_scheduler.main main
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

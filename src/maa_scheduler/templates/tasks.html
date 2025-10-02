@@ -4,14 +4,14 @@
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-	<h1 class="h2"><i class="bi bi-list-task me-2"></i>任务管理</h1>
+	<h1 class="h2"><i class="bi bi-list-task me-2"></i><span data-i18n="tasks.title">任务管理</span></h1>
 	<div class="btn-toolbar mb-2 mb-md-0">
 		<div class="btn-group">
 			<button type="button" class="btn btn-sm btn-primary" id="create-task-btn">
-				<i class="bi bi-plus-circle"></i> 新建任务
+				<i class="bi bi-plus-circle"></i> <span data-i18n="tasks.create">新建任务</span>
 			</button>
 			<button type="button" class="btn btn-sm btn-outline-secondary" id="refresh-task-btn">
-				<i class="bi bi-arrow-clockwise"></i> 刷新
+				<i class="bi bi-arrow-clockwise"></i> <span data-i18n="tasks.refresh">刷新</span>
 			</button>
 		</div>
 	</div>
@@ -45,27 +45,27 @@
 	<div class="col-md-4">
 		<div class="input-group">
 			<span class="input-group-text"><i class="bi bi-search"></i></span>
-			<input type="text" class="form-control" id="task-search" placeholder="搜索任务名称或描述...">
+			<input type="text" class="form-control" id="task-search" data-i18n-placeholder="tasks.searchPlaceholder" placeholder="搜索任务名称或描述...">
 		</div>
 	</div>
 	<div class="col-md-3">
 		<select class="form-select" id="status-filter">
-			<option value="">所有状态</option>
-			<option value="pending">待执行</option>
-			<option value="running">执行中</option>
-			<option value="completed">已完成</option>
-			<option value="failed">失败</option>
-			<option value="cancelled">已取消</option>
+			<option value="" data-i18n="tasks.statusFilter">所有状态</option>
+			<option value="pending" data-i18n="status.pending">待执行</option>
+			<option value="running" data-i18n="status.running">执行中</option>
+			<option value="completed" data-i18n="status.completed">已完成</option>
+			<option value="failed" data-i18n="status.failed">失败</option>
+			<option value="cancelled" data-i18n="status.cancelled">已取消</option>
 		</select>
 	</div>
 	<div class="col-md-3">
 		<select class="form-select" id="group-filter">
-			<option value="">所有资源分组</option>
+			<option value="" data-i18n="tasks.groupFilter">所有资源分组</option>
 		</select>
 	</div>
 	<div class="col-md-2 d-grid">
 		<button class="btn btn-outline-secondary" id="clear-filter-btn">
-			<i class="bi bi-x-circle"></i> 清除筛选
+			<i class="bi bi-x-circle"></i> <span data-i18n="tasks.clearFilters">清除筛选</span>
 		</button>
 	</div>
 </div>
@@ -76,18 +76,18 @@
 			<table class="table table-hover align-middle mb-0">
 				<thead class="table-light">
 					<tr>
-						<th>任务名称</th>
-						<th class="text-center">状态</th>
-						<th class="text-center">优先级</th>
-						<th class="text-center">资源分组</th>
-						<th class="text-center">触发类型</th>
-						<th class="text-center">下次执行</th>
-						<th class="text-end">操作</th>
+						<th data-i18n="tasks.table.headers.name">任务名称</th>
+						<th class="text-center" data-i18n="tasks.table.headers.status">状态</th>
+						<th class="text-center" data-i18n="tasks.table.headers.priority">优先级</th>
+						<th class="text-center" data-i18n="tasks.table.headers.group">资源分组</th>
+						<th class="text-center" data-i18n="tasks.table.headers.trigger">触发类型</th>
+						<th class="text-center" data-i18n="tasks.table.headers.next">下次执行</th>
+						<th class="text-end" data-i18n="tasks.table.headers.actions">操作</th>
 					</tr>
 				</thead>
 				<tbody id="tasks-table-body">
 					<tr>
-						<td colspan="7" class="text-center text-muted py-4">正在加载任务...</td>
+						<td colspan="7" class="text-center text-muted py-4" data-i18n="tasks.table.loading">正在加载任务...</td>
 					</tr>
 				</tbody>
 			</table>
@@ -357,6 +357,24 @@
 										<label class="form-check-label" for="retryRerunPreTasks">重试时重新执行前置任务</label>
 										<small class="text-muted d-block">关闭后重试会跳过ADB唤醒、分辨率调整等前置流程。</small>
 									</div>
+								</div>
+								<div class="col-12">
+									<div class="form-check mt-2">
+										<input class="form-check-input" type="checkbox" id="retrySuccessWindow">
+										<label class="form-check-label" for="retrySuccessWindow">成功后在时间窗口内继续运行</label>
+										<small class="text-muted d-block">仅适用于定时触发的任务，用于在时间段内多次执行。</small>
+									</div>
+								</div>
+							</div>
+							<div id="successRetryConfig" class="row g-3 mt-2 d-none">
+								<div class="col-md-4">
+									<label class="form-label" for="successRetryDelay">成功重试延迟（秒）</label>
+									<input type="number" class="form-control" id="successRetryDelay" min="0" placeholder="默认同失败重试延迟">
+								</div>
+								<div class="col-md-4">
+									<label class="form-label" for="successRetryMax">成功重试次数上限</label>
+									<input type="number" class="form-control" id="successRetryMax" min="1" placeholder="留空表示不限次数">
+									<small class="text-muted">用于限制同一时间窗口内的额外执行次数。</small>
 								</div>
 							</div>
 						</div>
@@ -712,7 +730,7 @@
 				triggers.push(trigger);
 			});
 		} catch (error) {
-			showToast(error.message || '触发器配置无效', 'warning');
+			showToast(error.message || AppI18n.t('tasks.toast.invalidTrigger', '触发器配置无效'), 'warning');
 			return null;
 		}
 		return triggers;
@@ -781,7 +799,7 @@
 			filterTasks();
 		} catch (error) {
 			console.error('加载任务列表失败:', error);
-			showToast(error.message || '加载任务列表失败', 'danger');
+			showToast(error.message || AppI18n.t('tasks.toast.loadTasksFailed', '加载任务列表失败'), 'danger');
 		}
 	}
 
@@ -792,7 +810,7 @@
 			updateResourceGroupSelects();
 		} catch (error) {
 			console.error('加载资源分组失败:', error);
-			showToast(error.message || '加载资源分组失败', 'danger');
+			showToast(error.message || AppI18n.t('tasks.toast.loadGroupsFailed', '加载资源分组失败'), 'danger');
 		}
 	}
 
@@ -969,6 +987,9 @@
 		document.getElementById('retryDelay').value = 60;
 		document.getElementById('retryNotify').value = '';
 	document.getElementById('retryRerunPreTasks').checked = true;
+		document.getElementById('retrySuccessWindow').checked = false;
+		document.getElementById('successRetryDelay').value = '';
+		document.getElementById('successRetryMax').value = '';
 		document.getElementById('adbLaunchDelay').value = '';
 		document.getElementById('adbLaunchPackage').value = '';
 		document.getElementById('adbLaunchActivity').value = '';
@@ -979,6 +1000,7 @@
 		syncKeywordSectionVisibility();
 		toggleKeywordConfig();
 		toggleRetryConfig();
+		toggleSuccessRetryConfig();
 
 		clearTriggers();
 		addTrigger();
@@ -1031,6 +1053,14 @@
 	function toggleRetryConfig() {
 		const enabled = document.getElementById('retryEnabled').checked;
 		document.getElementById('retryConfigSection').classList.toggle('d-none', !enabled);
+		toggleSuccessRetryConfig();
+	}
+
+	function toggleSuccessRetryConfig() {
+		const retryEnabled = document.getElementById('retryEnabled').checked;
+		const successEnabled = document.getElementById('retrySuccessWindow').checked;
+		const shouldShow = retryEnabled && successEnabled;
+		document.getElementById('successRetryConfig').classList.toggle('d-none', !shouldShow);
 	}
 
 	function buildPostTaskConfig() {
@@ -1086,17 +1116,31 @@
 		const delayValue = Number(document.getElementById('retryDelay').value);
 		const notifyValue = Number(document.getElementById('retryNotify').value);
 		const rerunPreTasks = document.getElementById('retryRerunPreTasks').checked;
+		const successRetryEnabled = document.getElementById('retrySuccessWindow').checked;
+		const successDelayValue = Number(document.getElementById('successRetryDelay').value);
+		const successMaxValue = Number(document.getElementById('successRetryMax').value);
 
 		const policy = {
 			enabled,
 			max_retries: enabled && Number.isFinite(maxRetriesValue) && maxRetriesValue >= 0 ? maxRetriesValue : 0,
 			delay_seconds: enabled && Number.isFinite(delayValue) && delayValue > 0 ? delayValue : 60,
 			notify_after_retries: null,
-			rerun_pre_tasks: enabled ? rerunPreTasks : true
+			rerun_pre_tasks: enabled ? rerunPreTasks : true,
+			retry_on_success_within_window: enabled ? successRetryEnabled : false,
+			success_retry_delay_seconds: null,
+			success_retry_max: null
 		};
 
 		if (enabled && Number.isFinite(notifyValue) && notifyValue > 0) {
 			policy.notify_after_retries = notifyValue;
+		}
+
+		if (enabled && successRetryEnabled && Number.isFinite(successDelayValue) && successDelayValue >= 0) {
+			policy.success_retry_delay_seconds = successDelayValue;
+		}
+
+		if (enabled && successRetryEnabled && Number.isFinite(successMaxValue) && successMaxValue > 0) {
+			policy.success_retry_max = successMaxValue;
 		}
 
 		return policy;
@@ -1110,7 +1154,7 @@
 			return null;
 		}
 		if (!triggers.length) {
-			showToast('请至少配置一个触发器', 'warning');
+			showToast(AppI18n.t('tasks.toast.missingTrigger', '请至少配置一个触发器'), 'warning');
 			return null;
 		}
 
@@ -1167,11 +1211,11 @@
 				return;
 			}
 			if (!payload.name) {
-				showToast('任务名称不能为空', 'warning');
+				showToast(AppI18n.t('tasks.toast.nameRequired', '任务名称不能为空'), 'warning');
 				return;
 			}
 			if (!payload.main_command) {
-				showToast('执行命令不能为空', 'warning');
+				showToast(AppI18n.t('tasks.toast.commandRequired', '执行命令不能为空'), 'warning');
 				return;
 			}
 
@@ -1184,12 +1228,15 @@
 				body: JSON.stringify(payload)
 			});
 
-			showToast(isEdit ? '任务更新成功' : '任务创建成功', 'success');
+			const successMessage = isEdit
+				? AppI18n.t('tasks.toast.updateSuccess', '任务更新成功')
+				: AppI18n.t('tasks.toast.createSuccess', '任务创建成功');
+			showToast(successMessage, 'success');
 			taskModalInstance.hide();
 			await loadTasks();
 		} catch (error) {
 			console.error('保存任务失败:', error);
-			showToast(error.message || '保存任务失败', 'danger');
+			showToast(error.message || AppI18n.t('tasks.toast.saveFailed', '保存任务失败'), 'danger');
 		} finally {
 			spinner.classList.add('d-none');
 			submitButton.disabled = false;
@@ -1216,7 +1263,7 @@
 			modal.show();
 		} catch (error) {
 			console.error('加载任务详情失败:', error);
-			showToast(error.message || '加载任务详情失败', 'danger');
+			showToast(error.message || AppI18n.t('tasks.toast.loadDetailFailed', '加载任务详情失败'), 'danger');
 		}
 	}
 
@@ -1337,7 +1384,7 @@
 		const schedulerRunning = systemStatus?.is_running ?? true;
 		const manualAllowed = !schedulerRunning || systemStatus?.mode === 'single_task';
 		if (!manualAllowed) {
-			showToast('请先停止调度器或切换到单任务模式后再手动执行任务', 'warning');
+			showToast(AppI18n.t('tasks.toast.manualRunBlocked', '请先停止调度器或切换到单任务模式后再手动执行任务'), 'warning');
 			return;
 		}
 
@@ -1449,6 +1496,9 @@
 		document.getElementById('retryDelay').value = retryPolicy.delay_seconds ?? 60;
 		document.getElementById('retryNotify').value = retryPolicy.notify_after_retries ?? '';
 	document.getElementById('retryRerunPreTasks').checked = retryPolicy.rerun_pre_tasks !== false;
+		document.getElementById('retrySuccessWindow').checked = Boolean(retryPolicy.retry_on_success_within_window);
+		document.getElementById('successRetryDelay').value = retryPolicy.success_retry_delay_seconds ?? '';
+		document.getElementById('successRetryMax').value = retryPolicy.success_retry_max ?? '';
 
 		toggleAdbConfig();
 	toggleResolutionConfig();
@@ -1456,6 +1506,7 @@
 		syncKeywordSectionVisibility();
 		toggleKeywordConfig();
 		toggleRetryConfig();
+		toggleSuccessRetryConfig();
 	}
 
 	function createTask() {
@@ -1572,6 +1623,7 @@
 		document.getElementById('enableTempLog').addEventListener('change', syncKeywordSectionVisibility);
 		document.getElementById('keywordMonitoringEnabled').addEventListener('change', toggleKeywordConfig);
 		document.getElementById('retryEnabled').addEventListener('change', toggleRetryConfig);
+		document.getElementById('retrySuccessWindow').addEventListener('change', toggleSuccessRetryConfig);
 	document.getElementById('enableResolutionSwitch').addEventListener('change', toggleResolutionConfig);
 
 		document.getElementById('run-task-btn').addEventListener('click', () => {

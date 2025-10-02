@@ -98,6 +98,20 @@ class RetryPolicy(BaseModel):
         description="达到指定失败次数后发送通知"
     )
     rerun_pre_tasks: bool = Field(default=True, description="重试时是否重新执行前置任务")
+    retry_on_success_within_window: bool = Field(
+        default=False,
+        description="在时间窗口内任务成功后是否继续尝试重新执行"
+    )
+    success_retry_delay_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="任务成功后再次执行前的延迟（秒），未设置时使用 delay_seconds"
+    )
+    success_retry_max: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="任务成功后在同一时间窗口内允许的额外执行次数，上限为空则不限制"
+    )
 
 class KeywordNotificationConfig(BaseModel):
     """关键词匹配通知配置"""

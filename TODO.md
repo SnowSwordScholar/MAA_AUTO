@@ -55,6 +55,7 @@
 - [ ] 编写面向 `uv run` 的一键开发/调试指南。
 - [ ] 整理 `start.sh` 与 `scripts/dev_start.sh`，减少重复配置。
 - [ ] 在部署文档中补充首轮 `adb connect` 以及分辨率需求说明。
+- [x] 提供 systemd 服务示例并在 README 中补充复制说明。
 
 ---
 

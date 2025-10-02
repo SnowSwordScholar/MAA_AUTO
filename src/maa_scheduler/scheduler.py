@@ -5,9 +5,9 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, time
-from typing import Dict, List, Set, Optional, Union, Tuple
+from typing import Dict, List, Set, Optional, Union, Tuple, Any
 from enum import Enum
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -29,6 +29,7 @@ class SchedulerMode(Enum):
 class TaskQueueItem:
     task: TaskConfig
     trigger_key: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class TaskQueue:
@@ -38,9 +39,15 @@ class TaskQueue:
         self.queue: List[TaskQueueItem] = []
         self.lock = asyncio.Lock()
     
-    async def put(self, task: TaskConfig, trigger_key: Optional[str] = None):
+    async def put(
+        self,
+        task: TaskConfig,
+        trigger_key: Optional[str] = None,
+        *,
+        metadata: Optional[Dict[str, Any]] = None
+    ):
         async with self.lock:
-            item = TaskQueueItem(task=task, trigger_key=trigger_key)
+            item = TaskQueueItem(task=task, trigger_key=trigger_key, metadata=metadata or {})
             # 按优先级插入（数字越小优先级越高）
             for i, queued_task in enumerate(self.queue):
                 if task.priority < queued_task.task.priority:
@@ -151,6 +158,8 @@ class TaskScheduler:
         self.trigger_last_run: Dict[str, datetime] = {}
         self.active_trigger_keys: Dict[str, Optional[str]] = {}
         self.preempted_tasks: Set[str] = set()
+        self.success_retry_tasks: Dict[str, asyncio.Task] = {}
+        self.success_retry_counters: Dict[str, int] = {}
 
     async def start(self):
         if self.is_running:
@@ -187,6 +196,8 @@ class TaskScheduler:
                 await self.worker_task
             except asyncio.CancelledError:
                 pass
+
+        await self._cancel_retry_handles()
         logger.info("任务调度器已停止")
 
     async def reload_tasks(self):
@@ -199,11 +210,8 @@ class TaskScheduler:
         self.task_triggers.clear()
         self.retry_counters.clear()
         self.retry_notified.clear()
-        if self.retry_tasks:
-            for task in self.retry_tasks.values():
-                task.cancel()
-            await asyncio.gather(*self.retry_tasks.values(), return_exceptions=True)
-            self.retry_tasks.clear()
+        self.success_retry_counters.clear()
+        await self._cancel_retry_handles()
         self.pending_window_tasks.clear()
         self.task_configs = {task.id: task for task in config.tasks}
 
@@ -479,7 +487,13 @@ class TaskScheduler:
                     self.job_trigger_lookup[job_id] = trigger_key
                     logger.info(f"任务 '{task.name}' 下一次随机触发时间: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        await self.task_queue.put(task, trigger_key)
+        queue_metadata: Dict[str, Any] = {}
+        if trigger:
+            queue_metadata['trigger_type'] = trigger.trigger_type
+        if trigger_key:
+            queue_metadata['trigger_key'] = trigger_key
+        queue_metadata.setdefault('origin', 'scheduler')
+        await self.task_queue.put(task, trigger_key, metadata=queue_metadata)
 
     async def _worker_loop(self):
         logger.info("工作进程已启动")
@@ -498,7 +512,7 @@ class TaskScheduler:
                 if not await self.resource_manager.can_start_task(task):
                     logger.info(f"资源不足，任务 '{task.name}' 重新加入队列")
                     await asyncio.sleep(5)
-                    await self.task_queue.put(task, trigger_key)
+                    await self.task_queue.put(task, trigger_key, metadata=task_item.metadata)
                     continue
 
                 await self.resource_manager.allocate_resource(task)
@@ -539,7 +553,8 @@ class TaskScheduler:
         logger.info(f"手动执行任务: {task.name} (ID: {task.id})")
 
         try:
-            asyncio.create_task(self._execute_and_handle_completion(TaskQueueItem(task=task)))
+            meta: Dict[str, Any] = {'manual': True, 'trigger_type': 'manual'}
+            asyncio.create_task(self._execute_and_handle_completion(TaskQueueItem(task=task, metadata=meta)))
         except Exception as e:
             await self.resource_manager.release_resource(task)
             logger.error(f"创建任务执行协程失败: {e}")
@@ -551,6 +566,12 @@ class TaskScheduler:
         trigger = self.task_triggers.get(trigger_key) if trigger_key else task.primary_trigger
         retry_key = self._make_retry_key(task.id, trigger_key)
 
+        metadata: Dict[str, Any] = dict(task_item.metadata or {})
+        if trigger_key and 'trigger_key' not in metadata:
+            metadata['trigger_key'] = trigger_key
+        if trigger and 'trigger_type' not in metadata:
+            metadata['trigger_type'] = trigger.trigger_type
+
         result = None
         retry_count = self.retry_counters.get(retry_key, 0)
         skip_pre_tasks = retry_count > 0 and not task.retry_policy.rerun_pre_tasks
@@ -560,11 +581,20 @@ class TaskScheduler:
                 task.name,
                 retry_count + 1
             )
+        if retry_count > 0:
+            metadata.setdefault('retry', True)
+            metadata.setdefault('retry_attempt', retry_count)
+            metadata.setdefault('origin', 'retry')
+        metadata.setdefault('origin', 'manual' if metadata.get('manual') else 'scheduler')
         self.active_trigger_keys[task.id] = trigger_key
         preempted = False
         try:
             try:
-                result = await self.executor.execute_task(task, skip_pre_tasks=skip_pre_tasks)
+                result = await self.executor.execute_task(
+                    task,
+                    skip_pre_tasks=skip_pre_tasks,
+                    metadata=metadata
+                )
             except Exception as e:
                 logger.error(f"执行任务 '{task.name}' 时发生错误: {e}", exc_info=True)
             finally:
@@ -589,6 +619,7 @@ class TaskScheduler:
                 retry_task = self.retry_tasks.pop(retry_key, None)
                 if retry_task:
                     retry_task.cancel()
+                await self._handle_success_retry(task, trigger_key, trigger, retry_key)
             elif cancelled:
                 logger.info(f"任务 '{task.name}' 被取消，本轮不触发重试")
             elif not preempted:
@@ -639,11 +670,18 @@ class TaskScheduler:
         delay = max(policy.delay_seconds, 1)
         if retry_key in self.retry_tasks:
             self.retry_tasks[retry_key].cancel()
-        retry_task = asyncio.create_task(self._retry_after_delay(task, trigger_key, retry_key, delay))
+        retry_task = asyncio.create_task(self._retry_after_delay(task, trigger_key, retry_key, delay, current))
         self.retry_tasks[retry_key] = retry_task
         logger.warning(f"任务 '{task.name}' 将在 {delay} 秒后进行第 {current} 次重试")
 
-    async def _retry_after_delay(self, task: TaskConfig, trigger_key: Optional[str], retry_key: str, delay: int):
+    async def _retry_after_delay(
+        self,
+        task: TaskConfig,
+        trigger_key: Optional[str],
+        retry_key: str,
+        delay: int,
+        attempt: int
+    ):
         try:
             await asyncio.sleep(delay)
             if not task.enabled:
@@ -651,7 +689,17 @@ class TaskScheduler:
                 return
 
             if self.is_running and self.mode == SchedulerMode.SCHEDULER:
-                await self.task_queue.put(task, trigger_key)
+                trigger = self.task_triggers.get(trigger_key) if trigger_key else None
+                metadata: Dict[str, Any] = {
+                    'retry': True,
+                    'retry_attempt': attempt,
+                    'origin': 'retry',
+                }
+                if trigger_key:
+                    metadata['trigger_key'] = trigger_key
+                if trigger:
+                    metadata['trigger_type'] = trigger.trigger_type
+                await self.task_queue.put(task, trigger_key, metadata=metadata)
             else:
                 logger.info(f"调度器当前未处于自动模式，对任务 '{task.name}' 进行手动重试")
                 try:
@@ -663,6 +711,138 @@ class TaskScheduler:
             raise
         finally:
             self.retry_tasks.pop(retry_key, None)
+
+    async def _handle_success_retry(
+        self,
+        task: TaskConfig,
+        trigger_key: Optional[str],
+        trigger: Optional[TriggerConfig],
+        retry_key: str
+    ):
+        policy = task.retry_policy
+        if not policy.enabled or not policy.retry_on_success_within_window:
+            self.success_retry_counters.pop(retry_key, None)
+            pending = self.success_retry_tasks.pop(retry_key, None)
+            if pending:
+                pending.cancel()
+            return
+
+        if not trigger_key:
+            logger.debug("任务 '%s' 成功执行，但未提供触发器键，跳过成功重试", task.name)
+            self.success_retry_counters.pop(retry_key, None)
+            pending = self.success_retry_tasks.pop(retry_key, None)
+            if pending:
+                pending.cancel()
+            return
+
+        if not trigger or trigger.trigger_type != "scheduled":
+            logger.debug("任务 '%s' 成功，但触发器非定时类型，跳过成功重试", task.name)
+            self.success_retry_counters.pop(retry_key, None)
+            pending = self.success_retry_tasks.pop(retry_key, None)
+            if pending:
+                pending.cancel()
+            return
+
+        if not self._is_time_window_active(trigger.start_time, trigger.end_time):
+            self.success_retry_counters.pop(retry_key, None)
+            pending = self.success_retry_tasks.pop(retry_key, None)
+            if pending:
+                pending.cancel()
+            return
+
+        current = self.success_retry_counters.get(retry_key, 0)
+        limit = policy.success_retry_max
+        if limit is not None and current >= limit:
+            logger.info(
+                "任务 '%s' 已达到成功重试上限 %d，本轮不再继续在窗口内触发",
+                task.name,
+                limit
+            )
+            self.success_retry_counters.pop(retry_key, None)
+            pending = self.success_retry_tasks.pop(retry_key, None)
+            if pending:
+                pending.cancel()
+            return
+
+        delay = policy.success_retry_delay_seconds
+        if delay is None or delay <= 0:
+            delay = max(policy.delay_seconds or 1, 1)
+
+        if retry_key in self.success_retry_tasks:
+            existing = self.success_retry_tasks.pop(retry_key)
+            existing.cancel()
+
+        handle = asyncio.create_task(
+            self._success_retry_after_delay(task, trigger_key, retry_key, delay, trigger, current)
+        )
+        self.success_retry_tasks[retry_key] = handle
+        logger.info(
+            "任务 '%s' 在时间窗口内成功完成，将在 %d 秒后尝试再次执行 (成功重试计数: %d)",
+            task.name,
+            delay,
+            current + 1
+        )
+
+    async def _success_retry_after_delay(
+        self,
+        task: TaskConfig,
+        trigger_key: Optional[str],
+        retry_key: str,
+        delay: int,
+        trigger: TriggerConfig,
+        previous_count: int
+    ):
+        try:
+            await asyncio.sleep(delay)
+
+            policy = task.retry_policy
+            if not policy.enabled or not policy.retry_on_success_within_window:
+                self.success_retry_counters.pop(retry_key, None)
+                return
+
+            if not self.is_running or self.mode != SchedulerMode.SCHEDULER:
+                logger.debug("调度器非自动模式，跳过任务 '%s' 的成功重试", task.name)
+                return
+
+            if not task.enabled:
+                logger.info("任务 '%s' 已禁用，跳过成功重试", task.name)
+                self.success_retry_counters.pop(retry_key, None)
+                return
+
+            if not self._is_time_window_active(trigger.start_time, trigger.end_time):
+                logger.info("任务 '%s' 的时间窗口已结束，停止成功重试", task.name)
+                self.success_retry_counters.pop(retry_key, None)
+                return
+
+            limit = policy.success_retry_max
+            current = self.success_retry_counters.get(retry_key, previous_count)
+            if limit is not None and current >= limit:
+                logger.info(
+                    "任务 '%s' 达到成功重试上限 %d，停止额外执行",
+                    task.name,
+                    limit
+                )
+                self.success_retry_counters.pop(retry_key, None)
+                return
+
+            next_attempt = current + 1
+            metadata: Dict[str, Any] = {
+                'success_retry': True,
+                'success_retry_attempt': next_attempt,
+                'origin': 'success_retry',
+            }
+            if trigger_key:
+                metadata['trigger_key'] = trigger_key
+            if trigger:
+                metadata['trigger_type'] = trigger.trigger_type
+            await self.task_queue.put(task, trigger_key, metadata=metadata)
+            self.success_retry_counters[retry_key] = next_attempt
+            logger.info("任务 '%s' 成功重试已重新加入执行队列", task.name)
+        except asyncio.CancelledError:
+            logger.debug("任务 '%s' 的成功重试计划已取消", task.name)
+            raise
+        finally:
+            self.success_retry_tasks.pop(retry_key, None)
 
     async def _preempt_lower_priority_tasks(self, incoming_task: TaskConfig):
         if not self.is_running:
@@ -800,6 +980,7 @@ class TaskScheduler:
         if mode == SchedulerMode.SINGLE_TASK:
             await self.task_queue.clear()
             await self._cancel_all_running_tasks(reason="mode-switch")
+            await self._cancel_retry_handles()
             logger.info("调度器已切换到单任务模式，自动调度暂停并终止所有正在执行的任务")
         else:
             logger.info("调度器已切换到自动调度模式")
@@ -814,6 +995,23 @@ class TaskScheduler:
             'resource_groups': self.resource_manager.get_all_groups_status(),
             'scheduled_jobs': len(self.scheduler.get_jobs()) if self.scheduler.running else 0
         }
+
+    async def _cancel_retry_handles(self):
+        pending: List[asyncio.Task] = []
+        if self.retry_tasks:
+            pending.extend(self.retry_tasks.values())
+        if self.success_retry_tasks:
+            pending.extend(self.success_retry_tasks.values())
+
+        if not pending:
+            return
+
+        for task in pending:
+            task.cancel()
+
+        await asyncio.gather(*pending, return_exceptions=True)
+        self.retry_tasks.clear()
+        self.success_retry_tasks.clear()
     
     def get_task_list(self) -> List[Dict]:
         result = []

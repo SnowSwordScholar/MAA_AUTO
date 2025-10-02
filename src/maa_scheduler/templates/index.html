@@ -4,76 +4,76 @@
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i class="bi bi-speedometer2"></i> 仪表板</h1>
+    <h1 class="h2"><i class="bi bi-speedometer2"></i> <span data-i18n="dashboard.title">仪表板</span></h1>
     <div class="btn-toolbar mb-2 mb-md-0">
         <div class="btn-group me-2">
             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
-                <i class="bi bi-arrow-clockwise"></i> 刷新
+                <i class="bi bi-arrow-clockwise"></i> <span data-i18n="dashboard.refresh">刷新</span>
             </button>
         </div>
     </div>
 </div>
 
 <!-- 统计卡片 -->
-<div class="row mb-4">
-    <div class="col-md-3">
+<div class="row mb-4 dashboard-metrics g-3">
+    <div class="col-12 col-sm-6 col-xl-3">
         <div class="card text-white bg-primary">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 class="card-title" id="total-tasks">0</h4>
-                        <p class="card-text">总任务数</p>
+                        <p class="card-text" data-i18n="dashboard.cards.total">总任务数</p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-list-task" style="font-size: 2rem;"></i>
+                        <i class="bi bi-list-task stat-card-icon" style="font-size: 2rem;"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3">
+
+    <div class="col-12 col-sm-6 col-xl-3">
         <div class="card text-white bg-success">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 class="card-title" id="running-tasks">0</h4>
-                        <p class="card-text">运行中任务</p>
+                        <p class="card-text" data-i18n="dashboard.cards.running">运行中任务</p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-play-circle" style="font-size: 2rem;"></i>
+                        <i class="bi bi-play-circle stat-card-icon" style="font-size: 2rem;"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3">
+
+    <div class="col-12 col-sm-6 col-xl-3">
         <div class="card text-white bg-warning">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 class="card-title" id="queued-tasks">0</h4>
-                        <p class="card-text">队列中任务</p>
+                        <p class="card-text" data-i18n="dashboard.cards.queued">队列中任务</p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-clock" style="font-size: 2rem;"></i>
+                        <i class="bi bi-clock stat-card-icon" style="font-size: 2rem;"></i>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-3">
+
+    <div class="col-12 col-sm-6 col-xl-3">
         <div class="card text-white bg-info">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 class="card-title" id="scheduled-jobs">0</h4>
-                        <p class="card-text">定时任务</p>
+                        <p class="card-text" data-i18n="dashboard.cards.scheduled">定时任务</p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-calendar-event" style="font-size: 2rem;"></i>
+                        <i class="bi bi-calendar-event stat-card-icon" style="font-size: 2rem;"></i>
                     </div>
                 </div>
             </div>
@@ -86,7 +86,7 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h5><i class="bi bi-diagram-3"></i> 资源分组状态</h5>
+                <h5><i class="bi bi-diagram-3"></i> <span data-i18n="dashboard.resourceGroupTitle">资源分组状态</span></h5>
             </div>
             <div class="card-body">
                 <div id="resource-groups" class="row">
@@ -102,12 +102,12 @@
     <div class="col-md-6">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5><i class="bi bi-activity"></i> 正在运行的任务</h5>
+                <h5><i class="bi bi-activity"></i> <span data-i18n="dashboard.runningTasksTitle">正在运行的任务</span></h5>
                 <span class="badge bg-primary" id="running-count">0</span>
             </div>
             <div class="card-body">
                 <div id="running-tasks-list">
-                    <p class="text-muted text-center">暂无运行中的任务</p>
+                    <p class="text-muted text-center" data-i18n="dashboard.runningEmpty">暂无运行中的任务</p>
                 </div>
             </div>
         </div>
@@ -116,11 +116,11 @@
     <div class="col-md-6">
         <div class="card">
             <div class="card-header">
-                <h5><i class="bi bi-clock-history"></i> 最近完成的任务</h5>
+                <h5><i class="bi bi-clock-history"></i> <span data-i18n="dashboard.recentTasksTitle">最近完成的任务</span></h5>
             </div>
             <div class="card-body">
                 <div id="recent-tasks-list">
-                    <p class="text-muted text-center">暂无完成的任务</p>
+                    <p class="text-muted text-center" data-i18n="dashboard.recentEmpty">暂无完成的任务</p>
                 </div>
             </div>
         </div>
@@ -158,8 +158,8 @@
     function updateTaskStatistics() {
         const totalTasks = tasks.length;
         const runningTasks = tasks.filter(task => task.status === 'running').length;
-        const queuedTasks = systemStatus.queue_size || 0;
-        const scheduledJobs = systemStatus.scheduled_jobs || 0;
+        const queuedTasks = systemStatus && typeof systemStatus.queue_size === 'number' ? systemStatus.queue_size : 0;
+        const scheduledJobs = systemStatus && typeof systemStatus.scheduled_jobs === 'number' ? systemStatus.scheduled_jobs : 0;
 
         document.getElementById('total-tasks').textContent = totalTasks;
         document.getElementById('running-tasks').textContent = runningTasks;
@@ -175,6 +175,15 @@
         Object.values(resourceGroups).forEach(group => {
             const progressPercentage = (group.running_count / group.max_concurrent) * 100;
             const progressColor = progressPercentage < 50 ? 'success' : progressPercentage < 80 ? 'warning' : 'danger';
+            const usageText = AppI18n.t('dashboard.group.usage', '{running} / {max} 正在使用')
+                .replace('{running}', group.running_count)
+                .replace('{max}', group.max_concurrent);
+            const availableText = AppI18n.t('dashboard.group.available', '可用: {available}')
+                .replace('{available}', group.available);
+            const runningList = group.running_tasks.length > 0
+                ? AppI18n.t('dashboard.group.runningTasks', '运行中: {tasks}')
+                    .replace('{tasks}', group.running_tasks.join(', '))
+                : AppI18n.t('dashboard.group.idle', '空闲');
 
             const groupHtml = `
                 <div class="col-md-4 mb-3">
@@ -191,9 +200,10 @@
                                 </div>
                             </div>
                             <small class="text-muted">
-                                ${group.running_count} / ${group.max_concurrent} 正在使用
-                                (可用: ${group.available})
+                                ${usageText}
+                                (${availableText})
                             </small>
+                            <div class="small text-muted mt-1">${runningList}</div>
                         </div>
                     </div>
                 </div>
@@ -210,7 +220,7 @@
         document.getElementById('running-count').textContent = runningTasks.length;
 
         if (runningTasks.length === 0) {
-            container.innerHTML = '<p class="text-muted text-center">暂无运行中的任务</p>';
+            container.innerHTML = `<p class="text-muted text-center">${AppI18n.t('dashboard.runningEmpty')}</p>`;
             return;
         }
 
@@ -224,7 +234,7 @@
                         <small class="text-muted">${task.resource_group}</small>
                     </div>
                     <div>
-                        <span class="badge bg-success">运行中</span>
+                        <span class="badge bg-success">${getStatusText('running')}</span>
                     </div>
                 </div>
             `;
@@ -247,26 +257,162 @@
 
     // 获取状态文本
     function getStatusText(status) {
-        const texts = {
-            'pending': '待执行',
-            'running': '执行中',
-            'completed': '已完成',
-            'failed': '失败',
-            'cancelled': '已取消'
+        return AppI18n.statusText(status || 'pending');
+    }
+
+    function formatTimestamp(isoString) {
+        if (!isoString) {
+            return '';
+        }
+        const date = new Date(isoString);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+        const locale = AppI18n.getLanguage && AppI18n.getLanguage() === 'zh' ? 'zh-CN' : 'en-US';
+        try {
+            return new Intl.DateTimeFormat(locale, {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(date);
+        } catch (error) {
+            console.warn('格式化时间失败:', error);
+            return date.toLocaleString();
+        }
+    }
+
+    function formatDuration(seconds) {
+        if (seconds === null || seconds === undefined) {
+            return '';
+        }
+        const value = Math.round(seconds);
+        return AppI18n.t('dashboard.durationSeconds', '{value} 秒').replace('{value}', value);
+    }
+
+    function getTriggerTypeLabel(triggerType) {
+        if (!triggerType) {
+            return '';
+        }
+        return AppI18n.t(`dashboard.triggerType.${triggerType}`, triggerType);
+    }
+
+    function buildRecentBadges(item) {
+        if (!item) {
+            return '';
+        }
+        const badges = [];
+        const originMap = {
+            manual: 'dashboard.origin.manual',
+            scheduler: 'dashboard.origin.scheduler',
+            retry: 'dashboard.origin.retry',
+            success_retry: 'dashboard.origin.successRetry'
         };
-        return texts[status] || status;
+
+        const originKey = originMap[item.origin];
+        if (originKey) {
+            badges.push({
+                text: AppI18n.t(originKey, originKey),
+                classes: 'bg-light text-muted border me-1'
+            });
+        }
+
+        if (item.trigger_type) {
+            const triggerLabel = getTriggerTypeLabel(item.trigger_type);
+            if (triggerLabel) {
+                badges.push({
+                    text: triggerLabel,
+                    classes: 'bg-secondary text-white me-1'
+                });
+            }
+        }
+
+        if (item.origin === 'retry' && item.retry_attempt) {
+            const attemptText = AppI18n.t('dashboard.retryAttemptLabel', `#${item.retry_attempt}`).replace('{value}', item.retry_attempt);
+            badges.push({
+                text: attemptText,
+                classes: 'bg-warning text-dark me-1'
+            });
+        }
+
+        if (item.origin === 'success_retry' && item.success_retry_attempt) {
+            const attemptText = AppI18n.t('dashboard.successRetryAttemptLabel', `#${item.success_retry_attempt}`).replace('{value}', item.success_retry_attempt);
+            badges.push({
+                text: attemptText,
+                classes: 'bg-info text-dark me-1'
+            });
+        }
+
+        if (!badges.length) {
+            return '';
+        }
+
+        const badgeHtml = badges.map((badge) => `<span class="badge rounded-pill ${badge.classes}">${badge.text}</span>`).join('');
+        return `<div class="recent-task-badges d-flex flex-wrap align-items-center">${badgeHtml}</div>`;
+    }
+
+    async function loadRecentTasks() {
+        try {
+            const history = await apiRequest('/api/task-history?limit=6');
+            const container = document.getElementById('recent-tasks-list');
+
+            if (!history || history.length === 0) {
+                container.innerHTML = `<p class="text-muted text-center">${AppI18n.t('dashboard.recentEmpty')}</p>`;
+                return;
+            }
+
+            let html = '<div class="list-group list-group-flush">';
+            history.forEach(item => {
+                const statusColor = getStatusColor(item.status);
+                const statusText = getStatusText(item.status);
+                const finishedAt = formatTimestamp(item.end_time || item.start_time);
+                const durationText = formatDuration(item.duration);
+                const metaParts = [finishedAt, durationText].filter(Boolean);
+                const badgesHtml = buildRecentBadges(item);
+                let meta = '';
+                if (badgesHtml) {
+                    meta += badgesHtml;
+                }
+                if (metaParts.length) {
+                    meta += `<small class="text-muted d-block">${metaParts.join(' · ')}</small>`;
+                }
+                if (meta) {
+                    meta = `<div class="recent-task-meta">${meta}</div>`;
+                }
+
+                html += `
+                    <div class="list-group-item px-0 d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">${item.task_name}</div>
+                            ${meta}
+                        </div>
+                        <span class="badge bg-${statusColor}">${statusText}</span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('加载任务历史失败:', error);
+        }
     }
 
     // 初始化页面
     document.addEventListener('DOMContentLoaded', function() {
+        if (window.AppI18n && typeof AppI18n.registerPageTitle === 'function') {
+            AppI18n.registerPageTitle('dashboard.title');
+        }
+
         loadTasks();
         loadResourceGroups();
+        loadRecentTasks();
 
         // 定时刷新数据
         setInterval(() => {
             loadTasks();
             loadResourceGroups();
-        }, 10000); // 每10秒刷新一次
+            loadRecentTasks();
+        }, 10000);
     });
 </script>
 {% endblock %}

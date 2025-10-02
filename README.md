@@ -10,6 +10,7 @@
 - **灵活的任务调度**: 支持 Cron 定时、间隔执行、随机时间三种触发方式
 - **资源分组管理**: 防止硬件资源冲突，支持并发控制
 - **任务队列系统**: 基于优先级的智能任务调度
+- **智能重试策略**: 支持失败重试与时间窗口内的成功重试配置
 - **实时监控**: Web 界面实时显示任务状态和系统信息
 - **日志管理**: 全局日志和任务独立日志，支持关键词监控
 - **通知推送**: 基于 Webhook 的任务状态通知
@@ -120,12 +121,15 @@ uv run python -m src.maa_scheduler.main main --web-only
 
 ### systemctl 服务配置
 
-1. 创建服务文件：
+项目内提供了一个可直接复制的示例单元文件：`config/systemd/maa-scheduler.service`。
+
+1. 复制示例文件并根据实际环境调整：
 ```bash
-sudo nano /etc/systemd/system/maa-scheduler.service
+sudo cp config/systemd/maa-scheduler.service /etc/systemd/system/maa-scheduler.service
+sudo chown root:root /etc/systemd/system/maa-scheduler.service
 ```
 
-2. 服务文件内容：
+2. 编辑服务文件，修改运行用户、工作目录与 uv 路径：
 ```ini
 [Unit]
 Description=MAA Task Scheduler
@@ -148,7 +152,7 @@ TimeoutStopSec=5
 WantedBy=multi-user.target
 ```
 
-3. 启用开机自启动：
+3. 重新加载 systemd 并启用开机自启动：
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable maa-scheduler.service

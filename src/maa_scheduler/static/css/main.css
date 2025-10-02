@@ -1,0 +1,107 @@
+/* Global enhancements for responsive layout and theme overrides */
+:root {
+  --sidebar-width: 260px;
+}
+
+.sidebar {
+  transition: transform 0.3s ease-in-out;
+  z-index: 1045;
+}
+
+.sidebar .card {
+  border: none;
+  box-shadow: none;
+}
+
+.mobile-navbar {
+  backdrop-filter: blur(4px);
+}
+
+@media (max-width: 992px) {
+  main {
+    padding-top: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    box-shadow: 0 0.5rem 1.5rem rgba(15, 23, 42, 0.2);
+    transform: translateX(-100%);
+    padding-bottom: 2rem;
+    z-index: 1045;
+  }
+
+  .sidebar.show {
+    transform: translateX(0);
+  }
+
+  .sidebar.collapse:not(.show) {
+    display: block;
+  }
+
+  body.sidebar-open {
+    overflow: hidden;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 56px 0 0 0;
+    background: rgba(15, 23, 42, 0.35);
+    display: none;
+    z-index: 1040;
+  }
+
+  body.sidebar-open .sidebar-backdrop {
+    display: block;
+  }
+
+  .card-title {
+    font-size: 1rem;
+  }
+
+  .card-body {
+    padding: 1rem;
+  }
+
+  .stat-card-icon {
+    font-size: 1.5rem !important;
+  }
+}
+
+@media (max-width: 576px) {
+  h1.h2 {
+    font-size: 1.375rem;
+  }
+
+  .btn-toolbar .btn {
+    margin-bottom: 0.25rem;
+  }
+
+  .dashboard-metrics .card {
+    margin-bottom: 0.75rem;
+  }
+}
+
+.recent-task-meta {
+  margin-top: 0.25rem;
+}
+
+.recent-task-badges {
+  gap: 0.35rem;
+}
+
+.recent-task-badges .badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.recent-task-meta small {
+  font-size: 0.75rem;
+}
