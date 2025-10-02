@@ -10,6 +10,8 @@
 
 The project started as a helper for MAA automation and now supports BAAH along with any other deployable terminal program. You can configure multiple scripts with the same queue, trigger, and monitoring workflow, all managed through a web UI.
 
+![Screenshot](screenshots/maa_auto.png)
+
 ## Features
 
 ### Core capabilities
