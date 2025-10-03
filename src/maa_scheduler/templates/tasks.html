@@ -1391,7 +1391,12 @@
 		try {
 			await apiRequest(`/api/tasks/${taskId}/run`, { method: 'POST' });
 			showToast('任务已开始执行', 'success');
-			await loadTasks();
+			setTimeout(async () => {
+				await loadTasks();
+				if (typeof updateSystemStatus === 'function') {
+					await updateSystemStatus();
+				}
+			}, 1000);
 		} catch (error) {
 			console.error('执行任务失败:', error);
 			showToast(error.message || '执行任务失败', 'danger');
@@ -1405,7 +1410,12 @@
 		try {
 			await apiRequest(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
 			showToast('取消任务请求已发送', 'success');
-			await loadTasks();
+			setTimeout(async () => {
+				await loadTasks();
+				if (typeof updateSystemStatus === 'function') {
+					await updateSystemStatus();
+				}
+			}, 1000);
 		} catch (error) {
 			console.error('取消任务失败:', error);
 			showToast(error.message || '取消任务失败', 'danger');
@@ -1420,7 +1430,12 @@
 		try {
 			await apiRequest(`/api/tasks/${taskId}`, { method: 'DELETE' });
 			showToast('任务已删除', 'success');
-			await loadTasks();
+			setTimeout(async () => {
+				await loadTasks();
+				if (typeof updateSystemStatus === 'function') {
+					await updateSystemStatus();
+				}
+			}, 1000);
 		} catch (error) {
 			console.error('删除任务失败:', error);
 			showToast(error.message || '删除任务失败', 'danger');

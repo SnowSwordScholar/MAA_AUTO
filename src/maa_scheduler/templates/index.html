@@ -173,36 +173,39 @@
         container.innerHTML = '';
 
         Object.values(resourceGroups).forEach(group => {
-            const progressPercentage = (group.running_count / group.max_concurrent) * 100;
-            const progressColor = progressPercentage < 50 ? 'success' : progressPercentage < 80 ? 'warning' : 'danger';
+            const progressPercentage = (group.running_count / Math.max(group.max_concurrent, 1)) * 100;
+            const progressColor = group.running_count === 0 ? 'success' : progressPercentage < 80 ? 'warning' : 'danger';
+            const borderClass = progressColor === 'success' ? 'success' : progressColor === 'warning' ? 'warning' : 'danger';
             const usageText = AppI18n.t('dashboard.group.usage', '{running} / {max} 正在使用')
                 .replace('{running}', group.running_count)
                 .replace('{max}', group.max_concurrent);
             const availableText = AppI18n.t('dashboard.group.available', '可用: {available}')
                 .replace('{available}', group.available);
-            const runningList = group.running_tasks.length > 0
+            const runningNames = (group.running_task_details || []).map(item => item.name || item.id);
+            const runningList = runningNames.length > 0
                 ? AppI18n.t('dashboard.group.runningTasks', '运行中: {tasks}')
-                    .replace('{tasks}', group.running_tasks.join(', '))
+                    .replace('{tasks}', runningNames.join(', '))
                 : AppI18n.t('dashboard.group.idle', '空闲');
 
             const groupHtml = `
                 <div class="col-md-4 mb-3">
-                    <div class="card">
+                    <div class="card border-${borderClass}">
                         <div class="card-body">
-                            <h6 class="card-title">${group.name}</h6>
-                            <p class="card-text text-muted">${group.description}</p>
-                            <div class="progress mb-2">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="card-title mb-0">${group.name}</h6>
+                                <span class="badge bg-${progressColor}">${group.running_count}/${group.max_concurrent}</span>
+                            </div>
+                            <p class="card-text text-muted mb-2">${group.description || ''}</p>
+                            <div class="progress mb-2" style="height: 8px;">
                                 <div class="progress-bar bg-${progressColor}" role="progressbar" 
                                      style="width: ${progressPercentage}%" 
                                      aria-valuenow="${group.running_count}" 
                                      aria-valuemin="0" 
-                                     aria-valuemax="${group.max_concurrent}">
-                                </div>
+                                     aria-valuemax="${group.max_concurrent}"></div>
                             </div>
-                            <small class="text-muted">
-                                ${usageText}
-                                (${availableText})
-                            </small>
+                            <div class="small text-muted">
+                                ${usageText} (${availableText})
+                            </div>
                             <div class="small text-muted mt-1">${runningList}</div>
                         </div>
                     </div>

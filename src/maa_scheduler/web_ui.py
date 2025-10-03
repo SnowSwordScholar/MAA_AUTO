@@ -108,8 +108,29 @@ async def change_scheduler_mode(payload: ModeUpdate):
 
 @app.get("/api/resource-groups")
 async def get_resource_groups():
-    """获取资源分组状态"""
-    return scheduler.resource_manager.get_all_groups_status()
+    """获取资源分组状态，附带任务名称"""
+    groups = scheduler.resource_manager.get_all_groups_status()
+    task_lookup: Dict[str, TaskConfig] = scheduler.task_configs.copy()
+    for task in config_manager.get_config().tasks:
+        task_lookup.setdefault(task.id, task)
+
+    for group in groups.values():
+        task_ids = list(group.get("running_tasks", []))
+        names: List[str] = []
+        details: List[Dict[str, Any]] = []
+        for task_id in task_ids:
+            task_config = task_lookup.get(task_id)
+            task_name = task_config.name if task_config else task_id
+            names.append(task_name)
+            details.append({
+                "id": task_id,
+                "name": task_name,
+                "priority": task_config.priority if task_config else None
+            })
+        group["running_task_ids"] = task_ids
+        group["running_tasks"] = names
+        group["running_task_details"] = details
+    return groups
 
 @app.get("/api/tasks", response_model=List[Dict])
 async def get_tasks_with_status():
@@ -241,17 +262,34 @@ async def save_app_config(config: AppConfig):
 # 日志和通知
 @app.get("/api/logs/{task_id}")
 async def get_task_logs(task_id: str, lines: int = 100):
-    """获取任务的临时日志"""
+    """获取任务日志（优先临时日志，回退到实时缓冲）"""
     try:
         temp_log_file = task_executor.get_temp_log_file(task_id)
-        if not temp_log_file or not temp_log_file.exists():
-            return {"lines": [], "total_lines": 0, "message": "任务没有临时日志或日志文件不存在"}
+        if temp_log_file and temp_log_file.exists():
+            with open(temp_log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+            return {
+                "lines": recent_lines,
+                "total_lines": len(all_lines),
+                "source": "temp"
+            }
 
-        with open(temp_log_file, 'r', encoding='utf-8', errors='ignore') as f:
-            all_lines = f.readlines()
-        
-        recent_lines = all_lines[-lines:]
-        return {"lines": recent_lines, "total_lines": len(all_lines)}
+        live_lines = task_executor.get_live_logs(task_id, limit=lines)
+        if live_lines:
+            return {
+                "lines": live_lines,
+                "total_lines": len(live_lines),
+                "source": "live",
+                "message": "显示最近一次任务执行的实时日志缓存"
+            }
+
+        return {
+            "lines": [],
+            "total_lines": 0,
+            "source": "none",
+            "message": "未找到该任务的日志记录"
+        }
     except Exception as e:
         logger.error(f"获取任务日志失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="获取任务日志失败")

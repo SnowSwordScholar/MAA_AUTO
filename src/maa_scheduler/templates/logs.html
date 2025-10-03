@@ -165,6 +165,26 @@
     let filteredLogs = [];
     let currentLogType = 'system';
     let currentTaskId = null;
+    let lastTaskLogSource = null;
+
+    function getStatusText(status) {
+        if (window.AppI18n && typeof AppI18n.statusText === 'function') {
+            return AppI18n.statusText(status);
+        }
+        if (!status) {
+            return 'pending';
+        }
+        const normalized = String(status).toLowerCase();
+        const fallback = {
+            pending: '待执行',
+            running: '执行中',
+            completed: '已完成',
+            failed: '失败',
+            cancelled: '已取消',
+            preempted: '已抢占'
+        };
+        return fallback[normalized] || normalized;
+    }
 
     // 初始化页面
     document.addEventListener('DOMContentLoaded', function() {
@@ -239,15 +259,21 @@
         try {
             let logs;
             if (currentLogType === 'system') {
-                // 系统日志 - 这里模拟获取系统日志
-                logs = await generateSystemLogs(lines);
+                const response = await apiRequest(`/api/logs?limit=${lines}`);
+                logs = response.lines || [];
                 document.getElementById('log-source-info').textContent = '系统日志';
             } else if (currentLogType === 'task' && currentTaskId) {
                 // 任务日志
                 const response = await apiRequest(`/api/logs/${currentTaskId}?lines=${lines}`);
                 logs = response.lines || [];
+                lastTaskLogSource = response.source || null;
                 const taskName = document.getElementById('task-select').selectedOptions[0]?.textContent || '';
-                document.getElementById('log-source-info').textContent = `任务日志: ${taskName}`;
+                const sourceLabel = lastTaskLogSource === 'temp'
+                    ? '（临时日志文件）'
+                    : lastTaskLogSource === 'live'
+                        ? '（实时日志缓存）'
+                        : '';
+                document.getElementById('log-source-info').textContent = `任务日志: ${taskName}${sourceLabel}`;
             } else {
                 logs = [];
                 document.getElementById('log-source-info').textContent = '请选择任务';
@@ -263,37 +289,6 @@
             console.error('加载日志失败:', error);
             showToast('加载日志失败', 'danger');
         }
-    }
-
-    // 生成系统日志（模拟）
-    async function generateSystemLogs(lines) {
-        const levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR'];
-        const messages = [
-            '调度器启动成功',
-            '任务队列处理中',
-            '任务执行完成',
-            '资源分配成功',
-            '通知发送成功',
-            '配置重新加载',
-            '数据库连接正常',
-            '内存使用率检查',
-            '任务超时处理',
-            '系统状态更新'
-        ];
-        
-        const logs = [];
-        const now = new Date();
-        
-        for (let i = 0; i < lines; i++) {
-            const timestamp = new Date(now.getTime() - (lines - i) * 1000);
-            const level = levels[Math.floor(Math.random() * levels.length)];
-            const message = messages[Math.floor(Math.random() * messages.length)];
-            
-            const logLine = `${timestamp.toISOString()} - maa_scheduler - ${level} - ${message}`;
-            logs.push(logLine);
-        }
-        
-        return logs;
     }
 
     // 过滤日志
@@ -335,7 +330,7 @@
             logDisplay.innerHTML = `
                 <div class="text-center text-muted" style="margin-top: 200px;">
                     <i class="bi bi-search" style="font-size: 4rem; opacity: 0.5;"></i>
-                    <p style="font-size: 1.2rem; margin-top: 20px;">未找到匹配的日志</p>
+                    <p style="font-size: 1.2rem; margin-top: 20px;">未找到匹配的日志${lastTaskLogSource === 'none' ? '（该任务没有可用日志）' : ''}</p>
                 </div>
             `;
             return;
