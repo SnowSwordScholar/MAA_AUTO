@@ -319,6 +319,18 @@
                                     <input type="number" class="form-control" name="log_backup_count" value="5" min="0">
                                 </div>
                             </div>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">任务日志保留数量</label>
+                                    <input type="number" class="form-control" name="task_log_backup_count" value="20" min="1">
+                                    <small class="form-text text-muted">每个任务保留的最近日志文件数量，超过时自动删除最旧日志</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">任务日志保留天数</label>
+                                    <input type="number" class="form-control" name="task_log_max_age_days" value="30" min="1">
+                                    <small class="form-text text-muted">可选，超过天数的任务日志会自动清理，留空表示不限制</small>
+                                </div>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -511,6 +523,8 @@ localhost</textarea>
         setInputValue('input[name="log_file"]', logging.file ?? 'logs/maa_scheduler.log');
         setInputValue('input[name="log_max_size"]', logging.max_size ?? '10MB');
         setInputValue('input[name="log_backup_count"]', logging.backup_count ?? 5);
+    setInputValue('input[name="task_log_backup_count"]', logging.task_backup_count ?? 20);
+    setInputValue('input[name="task_log_max_age_days"]', logging.task_max_age_days ?? '');
 
         setCheckboxValue('input[name="notification_enabled"]', Boolean(webhook));
         setInputValue('input[name="webhook_base_url"]', webhook?.base_url ?? '');
@@ -768,6 +782,14 @@ localhost</textarea>
                 updatedConfig.logging.max_size = formData.get('log_max_size') || updatedConfig.logging.max_size || '10MB';
                 const backupCount = formData.get('log_backup_count');
                 updatedConfig.logging.backup_count = toInt(backupCount ?? updatedConfig.logging.backup_count ?? 5, 5);
+                const taskBackup = formData.get('task_log_backup_count');
+                updatedConfig.logging.task_backup_count = toInt(taskBackup ?? updatedConfig.logging.task_backup_count ?? 20, 20);
+                const taskAgeRaw = formData.get('task_log_max_age_days');
+                if (taskAgeRaw === null || taskAgeRaw === undefined || taskAgeRaw === '') {
+                    updatedConfig.logging.task_max_age_days = null;
+                } else {
+                    updatedConfig.logging.task_max_age_days = toInt(taskAgeRaw, 30);
+                }
             }
 
             updatedConfig.resource_groups = collectResourceGroups();

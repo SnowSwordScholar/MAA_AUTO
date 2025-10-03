@@ -478,6 +478,7 @@
 	let logPollingTimer = null;
 	let activeLogTaskId = null;
 	let logOffcanvasInstance = null;
+	const eventUnsubscribers = [];
 
 	const statusColors = {
 		pending: 'secondary',
@@ -845,6 +846,125 @@
 		if (currentValue) {
 			ensureResourceGroupOption(currentValue);
 			formSelect.value = currentValue;
+		}
+	}
+
+	function registerEventHandlers() {
+		if (!window.AppEvents) {
+			return;
+		}
+
+		const offTaskStatus = AppEvents.on('task_status', handleTaskStatusEvent);
+		const offTaskList = AppEvents.on('task_list', handleTaskListEvent);
+		const offSchedulerStatus = AppEvents.on('scheduler_status', () => {
+			updateTasksTable();
+		});
+
+		eventUnsubscribers.push(offTaskStatus, offTaskList, offSchedulerStatus);
+	}
+
+	function cleanupEventHandlers() {
+		while (eventUnsubscribers.length) {
+			const unsubscribe = eventUnsubscribers.pop();
+			if (typeof unsubscribe === 'function') {
+				unsubscribe();
+			}
+		}
+	}
+
+	function handleTaskStatusEvent(eventData) {
+		if (!eventData || !eventData.task_id) {
+			return;
+		}
+
+		const index = tasks.findIndex(task => task.id === eventData.task_id);
+		if (index === -1) {
+			return;
+		}
+
+		const targetTask = tasks[index];
+		let changed = false;
+		if (eventData.status && targetTask.status !== eventData.status) {
+			targetTask.status = eventData.status;
+			changed = true;
+		}
+
+		if (eventData.history) {
+			targetTask.last_result = {
+				success: Boolean(eventData.history.success),
+				message: eventData.history.message,
+				return_code: eventData.history.return_code,
+				start_time: eventData.history.start_time,
+				end_time: eventData.history.end_time,
+				duration: eventData.history.duration,
+			};
+		}
+
+		if (eventData.history && eventData.history.next_run_time) {
+			if (targetTask.next_run_time !== eventData.history.next_run_time) {
+				targetTask.next_run_time = eventData.history.next_run_time;
+				changed = true;
+			}
+		}
+
+		if (changed) {
+			filterTasks();
+		}
+
+		if (activeLogTaskId === eventData.task_id) {
+			updateLogStatusBadge(eventData.status);
+		}
+	}
+
+	function handleTaskListEvent(taskList) {
+		if (!Array.isArray(taskList)) {
+			return;
+		}
+
+		const incomingIds = new Set();
+		let displayChanged = false;
+		let requiresReload = false;
+
+		taskList.forEach(summary => {
+			if (!summary || !summary.id) {
+				return;
+			}
+			incomingIds.add(summary.id);
+			const index = tasks.findIndex(task => task.id === summary.id);
+			if (index === -1) {
+				requiresReload = true;
+				return;
+			}
+
+			const task = tasks[index];
+			if (typeof summary.status === 'string' && task.status !== summary.status) {
+				task.status = summary.status;
+				displayChanged = true;
+			}
+			if (summary.next_run_time && task.next_run_time !== summary.next_run_time) {
+				task.next_run_time = summary.next_run_time;
+				displayChanged = true;
+			}
+		});
+
+		if (!requiresReload) {
+			for (const task of tasks) {
+				if (!incomingIds.has(task.id)) {
+					requiresReload = true;
+					break;
+				}
+			}
+		}
+
+		if (requiresReload) {
+			loadTasks();
+			return;
+		}
+
+		if (displayChanged) {
+			filterTasks();
+		} else {
+			updateTasksTable();
 		}
 	}
 
@@ -1686,10 +1806,15 @@
 			saveTask();
 		});
 
+		registerEventHandlers();
 		resetTaskForm();
 		loadResourceGroups();
 		loadTasks();
 		setInterval(loadTasks, 15000);
+	});
+
+	window.addEventListener('beforeunload', () => {
+		cleanupEventHandlers();
 	});
 </script>
 {% endblock %}

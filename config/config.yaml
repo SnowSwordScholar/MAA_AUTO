@@ -17,6 +17,8 @@ logging:
   file: logs/maa_scheduler.log
   max_size: 10MB
   backup_count: 5
+  task_backup_count: 20
+  task_max_age_days: 30
 resource_groups:
 - name: redroid
   description: ''

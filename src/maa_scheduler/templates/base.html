@@ -159,8 +159,68 @@
     <script src="/static/js/i18n.js"></script>
     <script>
         // 全局变量
-        let systemStatus = {};
-        let refreshTimer = null;
+    let systemStatus = {};
+    let refreshTimer = null;
+    let eventSource = null;
+    let eventReconnectTimer = null;
+    const EVENT_STREAM_URL = '/api/events';
+
+    const AppEvents = (() => {
+        const listeners = new Map();
+
+        function on(eventName, handler) {
+            if (!eventName || typeof handler !== 'function') {
+                return () => {};
+            }
+            if (!listeners.has(eventName)) {
+                listeners.set(eventName, new Set());
+            }
+            listeners.get(eventName).add(handler);
+            return () => off(eventName, handler);
+        }
+
+        function once(eventName, handler) {
+            if (!eventName || typeof handler !== 'function') {
+                return () => {};
+            }
+            const wrapper = (payload) => {
+                try {
+                    handler(payload);
+                } finally {
+                    off(eventName, wrapper);
+                }
+            };
+            return on(eventName, wrapper);
+        }
+
+        function off(eventName, handler) {
+            if (!eventName || !listeners.has(eventName)) {
+                return;
+            }
+            if (handler) {
+                listeners.get(eventName).delete(handler);
+            } else {
+                listeners.get(eventName).clear();
+            }
+        }
+
+        function emit(eventName, payload) {
+            if (!eventName || !listeners.has(eventName)) {
+                return;
+            }
+            listeners.get(eventName).forEach(listener => {
+                try {
+                    listener(payload);
+                } catch (err) {
+                    console.error('事件处理器执行失败:', err);
+                }
+            });
+        }
+
+        return { on, once, off, emit };
+    })();
+
+    window.AppEvents = AppEvents;
 
         // 工具函数
         function showToast(message, type = 'info') {
@@ -245,33 +305,129 @@
             }
         }
 
+        function renderSystemStatus(status) {
+            if (!status) {
+                return;
+            }
+
+            systemStatus = status;
+
+            const runningBadge = document.getElementById('status-running');
+            const runningKey = systemStatus.is_running ? 'system.running.true' : 'system.running.false';
+            runningBadge.textContent = AppI18n.t(runningKey);
+            runningBadge.className = systemStatus.is_running ? 'badge bg-success' : 'badge bg-secondary';
+
+            const modeBadge = document.getElementById('status-mode');
+            const modeKey = systemStatus.mode === 'scheduler' ? 'system.mode.auto' : 'system.mode.single';
+            modeBadge.textContent = AppI18n.t(modeKey);
+            modeBadge.className = systemStatus.mode === 'scheduler' ? 'badge bg-primary' : 'badge bg-warning';
+
+            document.getElementById('status-tasks').textContent = systemStatus.task_count ?? 0;
+            const runningCount = Array.isArray(systemStatus.running_tasks) ? systemStatus.running_tasks.length : 0;
+            document.getElementById('status-running-tasks').textContent = runningCount;
+
+            document.getElementById('scheduler-mode').value = systemStatus.mode;
+
+            document.getElementById('btn-start-scheduler').disabled = Boolean(systemStatus.is_running);
+            document.getElementById('btn-stop-scheduler').disabled = !systemStatus.is_running;
+
+            AppEvents.emit('scheduler_status', systemStatus);
+        }
+
         // 更新系统状态
         async function updateSystemStatus() {
             try {
-                systemStatus = await apiRequest('/api/status');
-                
-                const runningBadge = document.getElementById('status-running');
-                const runningKey = systemStatus.is_running ? 'system.running.true' : 'system.running.false';
-                runningBadge.textContent = AppI18n.t(runningKey);
-                runningBadge.className = systemStatus.is_running ? 'badge bg-success' : 'badge bg-secondary';
-
-                const modeBadge = document.getElementById('status-mode');
-                const modeKey = systemStatus.mode === 'scheduler' ? 'system.mode.auto' : 'system.mode.single';
-                modeBadge.textContent = AppI18n.t(modeKey);
-                modeBadge.className = systemStatus.mode === 'scheduler' ? 'badge bg-primary' : 'badge bg-warning';
-                
-                document.getElementById('status-tasks').textContent = systemStatus.task_count;
-                document.getElementById('status-running-tasks').textContent = systemStatus.running_tasks.length;
-                
-                // 更新模式选择器
-                document.getElementById('scheduler-mode').value = systemStatus.mode;
-                
-                // 更新按钮状态
-                document.getElementById('btn-start-scheduler').disabled = systemStatus.is_running;
-                document.getElementById('btn-stop-scheduler').disabled = !systemStatus.is_running;
-                
+                const status = await apiRequest('/api/status');
+                renderSystemStatus(status);
             } catch (error) {
                 console.error('更新系统状态失败:', error);
+            }
+        }
+
+        function scheduleEventReconnect(delay = 5000) {
+            if (eventReconnectTimer) {
+                clearTimeout(eventReconnectTimer);
+            }
+            eventReconnectTimer = setTimeout(() => {
+                eventReconnectTimer = null;
+                initializeEventSource();
+            }, delay);
+        }
+
+        function closeEventSource() {
+            if (eventSource) {
+                try {
+                    eventSource.close();
+                } catch (err) {
+                    console.warn('关闭事件源失败:', err);
+                }
+            }
+            eventSource = null;
+        }
+
+        function handleEventPayload(rawData) {
+            if (!rawData) {
+                return;
+            }
+            let payload;
+            try {
+                payload = JSON.parse(rawData);
+            } catch (error) {
+                console.error('解析事件数据失败:', error, rawData);
+                return;
+            }
+            if (!payload || typeof payload !== 'object') {
+                return;
+            }
+
+            const { type, data } = payload;
+            if (!type) {
+                return;
+            }
+
+            let emitted = false;
+            if (type === 'scheduler_status') {
+                renderSystemStatus(data);
+                emitted = true;
+            }
+
+            if (!emitted) {
+                AppEvents.emit(type, data);
+            }
+        }
+
+        function initializeEventSource() {
+            if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+                return;
+            }
+            closeEventSource();
+
+            try {
+                if (typeof window.EventSource === 'undefined') {
+                    console.warn('当前浏览器不支持事件流 (EventSource)。');
+                    return;
+                }
+                eventSource = new EventSource(EVENT_STREAM_URL);
+
+                eventSource.onmessage = (event) => {
+                    handleEventPayload(event.data);
+                };
+
+                eventSource.onerror = (error) => {
+                    console.error('事件流连接错误:', error);
+                    AppEvents.emit('event_stream_error', error);
+                    closeEventSource();
+                    scheduleEventReconnect(5000);
+                };
+
+                eventSource.onopen = () => {
+                    AppEvents.emit('event_stream_open', null);
+                };
+            } catch (error) {
+                console.error('初始化事件流失败:', error);
+                AppEvents.emit('event_stream_error', error);
+                closeEventSource();
+                scheduleEventReconnect(8000);
             }
         }
 
@@ -370,13 +526,24 @@
 
             // 初始化状态
             updateSystemStatus();
-            refreshTimer = setInterval(updateSystemStatus, 5000);
+            refreshTimer = setInterval(updateSystemStatus, 15000);
+            initializeEventSource();
         });
 
         // 页面卸载时清理定时器
         window.addEventListener('beforeunload', function() {
             if (refreshTimer) {
                 clearInterval(refreshTimer);
+            }
+            if (eventReconnectTimer) {
+                clearTimeout(eventReconnectTimer);
+            }
+            closeEventSource();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                initializeEventSource();
             }
         });
     </script>

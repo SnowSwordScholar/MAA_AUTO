@@ -4,19 +4,22 @@
 """
 
 import asyncio
+import json
 import logging
 import os
 import shlex
 import signal
 import subprocess
+import uuid
 from collections import deque
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Deque, Any, List, Set
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 from .config import TaskConfig, config_manager
 from .notification import notification_service
+from .events import event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +55,231 @@ class TaskExecutor:
         self.temp_log_files: Dict[str, Path] = {}
         self.live_logs: Dict[str, Deque[str]] = {}
         self.task_history: Deque[Dict[str, Any]] = deque(maxlen=200)
+        self.log_root = Path("logs")
+        self.task_log_root = self.log_root / "tasks"
+        self.task_history_file = self.log_root / "task_history.json"
+        self.task_log_index_file = self.log_root / "task_logs_index.json"
+        self.task_log_records: Dict[str, Deque[Dict[str, Any]]] = {}
+        self.log_retention_count: int = 20
+        self.log_retention_days: Optional[int] = None
         try:
             self.last_known_resolution: Optional[str] = config_manager.get_config().app.last_device_resolution
         except Exception:
             self.last_known_resolution = None
         self.connected_devices: Set[str] = set()
         self.cancellation_reasons: Dict[str, str] = {}
+        self._update_log_settings()
+        self._load_persistent_state()
+
+    def _update_log_settings(self) -> None:
+        try:
+            logging_config = config_manager.get_config().logging
+            self.log_retention_count = max(logging_config.task_backup_count or 1, 1)
+            self.log_retention_days = logging_config.task_max_age_days
+        except Exception as exc:  # pragma: no cover - 防止配置读取异常导致崩溃
+            logger.warning("更新日志配置失败: %s", exc)
+
+    def _ensure_directories(self) -> None:
+        try:
+            self.log_root.mkdir(parents=True, exist_ok=True)
+            self.task_log_root.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            logger.error("创建日志目录失败: %s", exc)
+
+    def _load_persistent_state(self) -> None:
+        self._ensure_directories()
+
+        if self.task_history_file.exists():
+            try:
+                with open(self.task_history_file, 'r', encoding='utf-8') as f:
+                    entries = json.load(f)
+                if isinstance(entries, list):
+                    for entry in entries[-self.task_history.maxlen:]:
+                        if isinstance(entry, dict):
+                            self.task_history.append(entry)
+            except Exception as exc:
+                logger.error("加载任务历史记录失败: %s", exc)
+
+        if self.task_log_index_file.exists():
+            try:
+                with open(self.task_log_index_file, 'r', encoding='utf-8') as f:
+                    raw_index = json.load(f)
+                if isinstance(raw_index, dict):
+                    maxlen = max(self.log_retention_count * 2, 200)
+                    for task_id, records in raw_index.items():
+                        if not isinstance(records, list):
+                            continue
+                        deque_records: Deque[Dict[str, Any]] = deque(maxlen=maxlen)
+                        for record in records:
+                            if isinstance(record, dict):
+                                deque_records.append(record)
+                        if deque_records:
+                            self.task_log_records[task_id] = deque_records
+                            last = deque_records[-1]
+                            path = last.get("log_file")
+                            if path:
+                                self.temp_log_files[task_id] = Path(path)
+            except Exception as exc:
+                logger.error("加载任务日志索引失败: %s", exc)
+
+    def _persist_history(self) -> None:
+        try:
+            with open(self.task_history_file, 'w', encoding='utf-8') as f:
+                json.dump(list(self.task_history), f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.error("持久化任务历史失败: %s", exc)
+
+    def _persist_log_index(self) -> None:
+        try:
+            serializable = {
+                task_id: list(records)
+                for task_id, records in self.task_log_records.items()
+            }
+            with open(self.task_log_index_file, 'w', encoding='utf-8') as f:
+                json.dump(serializable, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.error("持久化任务日志索引失败: %s", exc)
+
+    def _generate_run_id(self) -> str:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"{timestamp}_{uuid.uuid4().hex[:6]}"
+
+    def _prepare_task_log_file(self, task_id: str, run_id: str) -> Path:
+        task_dir = self.task_log_root / task_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        return task_dir / f"{run_id}.log"
+
+    def _record_task_log(
+        self,
+        task_config: TaskConfig,
+        run_id: str,
+        log_file: Path,
+        history_entry: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        log_size = 0
+        try:
+            if log_file.exists():
+                log_size = log_file.stat().st_size
+        except Exception:
+            log_size = 0
+
+        record = {
+            "task_id": task_config.id,
+            "task_name": task_config.name,
+            "run_id": run_id,
+            "status": history_entry.get("status"),
+            "success": history_entry.get("success"),
+            "start_time": history_entry.get("start_time"),
+            "end_time": history_entry.get("end_time"),
+            "duration": history_entry.get("duration"),
+            "log_file": str(log_file),
+            "log_size": log_size,
+            "created_at": datetime.now().isoformat(),
+            "resource_group": history_entry.get("resource_group"),
+            "origin": history_entry.get("origin"),
+        }
+
+        maxlen = max(self.log_retention_count * 2, 200)
+        records = self.task_log_records.setdefault(task_config.id, deque(maxlen=maxlen))
+        records.append(record)
+        self._apply_log_retention(task_config.id)
+        return record
+
+    def _apply_log_retention(self, task_id: str) -> None:
+        records = self.task_log_records.get(task_id)
+        if not records:
+            return
+
+        # 按数量清理
+        retention = max(self.log_retention_count, 1)
+        while len(records) > retention:
+            removed = records.popleft()
+            self._delete_log_file(removed.get("log_file"))
+
+        # 按天数清理
+        if self.log_retention_days and self.log_retention_days > 0:
+            cutoff = datetime.now() - timedelta(days=self.log_retention_days)
+            filtered: Deque[Dict[str, Any]] = deque(maxlen=records.maxlen)
+            for record in records:
+                end_time = record.get("end_time") or record.get("created_at")
+                record_time: Optional[datetime] = None
+                if isinstance(end_time, str):
+                    try:
+                        record_time = datetime.fromisoformat(end_time)
+                    except ValueError:
+                        record_time = None
+                if record_time and record_time < cutoff:
+                    self._delete_log_file(record.get("log_file"))
+                    continue
+                filtered.append(record)
+            if len(filtered) != len(records):
+                self.task_log_records[task_id] = filtered
+
+    def _delete_log_file(self, path: Optional[str]) -> None:
+        if not path:
+            return
+        try:
+            file_path = Path(path)
+            if file_path.exists():
+                file_path.unlink()
+        except Exception as exc:  # pragma: no cover - 记录但不阻断流程
+            logger.warning("删除旧日志文件失败: %s", exc)
+
+    def _find_log_record(self, task_id: str, run_id: str) -> Optional[Dict[str, Any]]:
+        records = self.task_log_records.get(task_id)
+        if not records:
+            return None
+        for record in reversed(records):
+            if record.get("run_id") == run_id:
+                return record
+        return None
+
+    def get_log_records(self, task_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        records = list(self.task_log_records.get(task_id, deque()))[::-1]
+        if limit is not None and limit > 0:
+            return records[:limit]
+        return records
+
+    def refresh_log_settings(self) -> None:
+        self._update_log_settings()
+        for task_id in list(self.task_log_records.keys()):
+            self._apply_log_retention(task_id)
+        self._persist_log_index()
+
+    async def _emit_task_events(
+        self,
+        *,
+        task_config: TaskConfig,
+        status: str,
+        run_id: str,
+        history_entry: Optional[Dict[str, Any]] = None,
+        log_record: Optional[Dict[str, Any]] = None
+    ) -> None:
+        payload = {
+            "task_id": task_config.id,
+            "task_name": task_config.name,
+            "status": status,
+            "run_id": run_id,
+        }
+        if history_entry:
+            payload["history"] = history_entry
+        if log_record:
+            payload["log_record"] = log_record
+        await event_bus.publish({
+            "type": "task_status",
+            "data": payload
+        })
+
+        if history_entry:
+            await event_bus.publish({
+                "type": "task_history_entry",
+                "data": history_entry
+            })
+        if log_record:
+            await event_bus.publish({
+                "type": "task_log_record",
+                "data": log_record
+            })
     
     async def execute_task(
         self,
@@ -68,11 +290,17 @@ class TaskExecutor:
     ) -> TaskResult:
         """执行任务的完整流程"""
         logger.info(f"开始执行任务: {task_config.name} (ID: {task_config.id})")
+        self._update_log_settings()
+        self._ensure_directories()
 
+        run_id = self._generate_run_id()
         result = TaskResult(task_config.id, False)
         result.start_time = datetime.now()
+
         if metadata:
             result.metadata = dict(metadata)
+        metadata_source = result.metadata if result.metadata else {}
+        metadata_source.setdefault("run_id", run_id)
 
         current_task = asyncio.current_task()
         if current_task is not None:
@@ -80,15 +308,42 @@ class TaskExecutor:
 
         self.live_logs[task_config.id] = deque(maxlen=500)
 
+        log_file = self._prepare_task_log_file(task_config.id, run_id)
+        stream_log_file = log_file if task_config.enable_temp_log else None
+        if stream_log_file:
+            self.temp_log_files[task_config.id] = stream_log_file
+
+        await self._emit_task_events(
+            task_config=task_config,
+            status=TaskStatus.RUNNING.value,
+            run_id=run_id
+        )
+
+        log_record: Optional[Dict[str, Any]] = None
         try:
             if skip_pre_tasks:
                 logger.info(f"任务 '{task_config.name}' 在本次尝试中跳过前置任务执行")
+                if task_config.adb_device_id:
+                    await self._ensure_adb_connection(task_config.adb_device_id, task_config.id)
             else:
                 pre_task_success = await self._execute_pre_tasks(task_config)
                 if not pre_task_success:
                     raise Exception("前置任务执行失败")
 
-            success, return_code, stdout, stderr = await self._execute_main_task(task_config)
+            success, return_code, stdout, stderr = await self._execute_main_task(
+                task_config,
+                log_file=stream_log_file
+            )
+
+            if not task_config.enable_temp_log:
+                try:
+                    timestamp = datetime.now().isoformat()
+                    with open(log_file, 'w', encoding='utf-8') as writer:
+                        for line in self.live_logs.get(task_config.id, []):
+                            writer.write(f"[{timestamp}] {line}\n")
+                    self.temp_log_files[task_config.id] = log_file
+                except Exception as exc:
+                    logger.error("写入任务日志失败: %s", exc)
 
             result.success = success
             result.return_code = return_code
@@ -133,7 +388,6 @@ class TaskExecutor:
                 TaskStatus.COMPLETED.value if result.success
                 else (TaskStatus.CANCELLED.value if result.message == "任务被取消" else TaskStatus.FAILED.value)
             )
-            metadata_source = metadata if metadata is not None else result.metadata
             metadata_copy = dict(metadata_source) if metadata_source else {}
 
             history_entry = {
@@ -154,13 +408,27 @@ class TaskExecutor:
                 "success_retry_attempt": metadata_copy.get("success_retry_attempt"),
                 "manual": metadata_copy.get("manual", False),
                 "metadata": metadata_copy,
+                "run_id": run_id,
+                "log_file": str(log_file),
             }
             self.task_history.append(history_entry)
+            self._persist_history()
+
+            log_record = self._record_task_log(task_config, run_id, log_file, history_entry)
+            self._persist_log_index()
 
             if task_config.id in self.running_tasks:
                 self.running_tasks.pop(task_config.id)
             if hasattr(self, "cancellation_reasons"):
                 self.cancellation_reasons.pop(task_config.id, None)
+
+            await self._emit_task_events(
+                task_config=task_config,
+                status=status,
+                run_id=run_id,
+                history_entry=history_entry,
+                log_record=log_record
+            )
 
         return result
 
@@ -273,13 +541,16 @@ class TaskExecutor:
             logger.error(f"调整分辨率失败: {e}", exc_info=True)
             return False
 
-    async def _execute_main_task(self, task_config: TaskConfig) -> Tuple[bool, int, str, str]:
+    async def _execute_main_task(
+        self,
+        task_config: TaskConfig,
+        *,
+        log_file: Optional[Path] = None
+    ) -> Tuple[bool, int, str, str]:
         """执行主命令"""
-        log_file = None
-        if task_config.enable_temp_log:
-            log_file = self._create_temp_log_file(task_config.id)
+        if log_file:
             self.temp_log_files[task_config.id] = log_file
-        
+
         return await self._run_shell_command(
             task_config.main_command,
             log_file=log_file,
@@ -333,6 +604,8 @@ class TaskExecutor:
 
     async def _run_adb_command(self, device_id: str, command: str, task_id: Optional[str] = None):
         """运行ADB命令并处理错误"""
+        if not await self._ensure_adb_connection(device_id, task_id):
+            raise Exception(f"无法连接到 ADB 设备: {device_id}")
         adb_path = config_manager.get_config().app.adb_path or "adb"
         adb_exec = shlex.quote(adb_path)
         safe_device = shlex.quote(device_id)
@@ -446,13 +719,6 @@ class TaskExecutor:
         for exc in termination_errors:
             logger.warning(f"终止进程时遇到异常: {exc}")
 
-    def _create_temp_log_file(self, task_id: str) -> Path:
-        log_dir = Path("logs/temp")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"task_{task_id}_{timestamp}.log"
-        return log_file
-
     async def cancel_task(self, task_id: str, *, reason: str = "manual") -> bool:
         task = self.running_tasks.get(task_id)
         if not task:
@@ -487,8 +753,15 @@ class TaskExecutor:
     def get_running_tasks(self) -> list[str]:
         return list(self.running_tasks.keys())
 
-    def get_temp_log_file(self, task_id: str) -> Optional[Path]:
-        return self.temp_log_files.get(task_id)
+    def get_temp_log_file(self, task_id: str, run_id: Optional[str] = None) -> Optional[Path]:
+        if run_id:
+            record = self._find_log_record(task_id, run_id)
+            if record and record.get("log_file"):
+                return Path(record["log_file"])
+        path = self.temp_log_files.get(task_id)
+        if not path:
+            return None
+        return Path(path)
 
     def _append_live_log(self, task_id: str, line: str):
         if task_id not in self.live_logs:

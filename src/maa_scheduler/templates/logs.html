@@ -35,6 +35,12 @@
             <option value="">选择任务...</option>
         </select>
     </div>
+    <div class="col-md-3" id="execution-select-container" style="display: none;">
+        <label class="form-label">执行记录</label>
+        <select class="form-select" id="execution-select">
+            <option value="">最近一次执行</option>
+        </select>
+    </div>
     <div class="col-md-2">
         <label class="form-label">日志级别</label>
         <select class="form-select" id="log-level-filter">
@@ -60,6 +66,14 @@
         <button class="btn btn-primary w-100" onclick="loadLogs()">
             <i class="bi bi-search"></i> 加载
         </button>
+    </div>
+</div>
+
+<div class="row mb-3" id="execution-meta-row" style="display: none;">
+    <div class="col-12">
+        <div class="alert alert-secondary py-2 mb-0" id="execution-meta">
+            <div class="d-flex flex-wrap gap-3 small" id="execution-meta-content"></div>
+        </div>
     </div>
 </div>
 
@@ -166,6 +180,14 @@
     let currentLogType = 'system';
     let currentTaskId = null;
     let lastTaskLogSource = null;
+    let taskLogRecords = [];
+    let currentRunId = null;
+    let taskSelectElement = null;
+    let executionSelectElement = null;
+    let executionSelectContainer = null;
+    let executionMetaRow = null;
+    let executionMetaContent = null;
+    const logEventUnsubscribers = [];
 
     function getStatusText(status) {
         if (window.AppI18n && typeof AppI18n.statusText === 'function') {
@@ -186,9 +208,219 @@
         return fallback[normalized] || normalized;
     }
 
+    function initializeLogElements() {
+        taskSelectElement = document.getElementById('task-select');
+        executionSelectElement = document.getElementById('execution-select');
+        executionSelectContainer = document.getElementById('execution-select-container');
+        executionMetaRow = document.getElementById('execution-meta-row');
+        executionMetaContent = document.getElementById('execution-meta-content');
+    }
+
+    function registerLogEventHandlers() {
+        if (!window.AppEvents) {
+            return;
+        }
+        logEventUnsubscribers.push(
+            AppEvents.on('task_log_record', handleTaskLogRecordEvent),
+            AppEvents.on('task_status', handleTaskStatusEvent)
+        );
+    }
+
+    function cleanupLogEventHandlers() {
+        while (logEventUnsubscribers.length) {
+            const unsubscribe = logEventUnsubscribers.pop();
+            if (typeof unsubscribe === 'function') {
+                unsubscribe();
+            }
+        }
+    }
+
+    function formatBytes(bytes) {
+        if (typeof bytes !== 'number' || Number.isNaN(bytes) || bytes < 0) {
+            return '未知';
+        }
+        if (bytes < 1024) {
+            return `${bytes} B`;
+        }
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let value = bytes;
+        let unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+            value /= 1024;
+            unitIndex += 1;
+        }
+        return `${value.toFixed(1)} ${units[unitIndex]}`;
+    }
+
+    function formatExecutionLabel(record) {
+        if (!record) {
+            return '';
+        }
+        const start = record.start_time ? new Date(record.start_time).toLocaleString() : '未知时间';
+        const status = getStatusText(record.status || 'pending');
+        return `${start} · ${status}`;
+    }
+
+    function updateExecutionSelect(records, preferredRunId = null) {
+        if (!executionSelectElement || !executionSelectContainer) {
+            return null;
+        }
+        executionSelectElement.innerHTML = '<option value="">最近一次执行</option>';
+
+        if (!Array.isArray(records) || records.length === 0) {
+            executionSelectContainer.style.display = 'none';
+            currentRunId = null;
+            return null;
+        }
+
+    executionSelectContainer.style.display = currentLogType === 'task' ? 'block' : 'none';
+        records.forEach(record => {
+            if (!record || !record.run_id) {
+                return;
+            }
+            const option = document.createElement('option');
+            option.value = record.run_id;
+            option.textContent = formatExecutionLabel(record);
+            option.dataset.status = record.status || '';
+            option.dataset.success = record.success ? 'true' : 'false';
+            option.dataset.name = record.task_name || '';
+            executionSelectElement.appendChild(option);
+        });
+
+        const availableRunIds = new Set(records.filter(item => item?.run_id).map(item => item.run_id));
+        let targetValue = null;
+        if (preferredRunId && availableRunIds.has(preferredRunId)) {
+            targetValue = preferredRunId;
+        } else if (currentRunId && availableRunIds.has(currentRunId)) {
+            targetValue = currentRunId;
+        } else {
+            targetValue = records[0]?.run_id || '';
+        }
+
+        executionSelectElement.value = targetValue || '';
+        currentRunId = executionSelectElement.value || null;
+        return currentRunId;
+    }
+
+    function getSelectedExecutionRecord() {
+        if (!Array.isArray(taskLogRecords) || taskLogRecords.length === 0) {
+            return null;
+        }
+        if (currentRunId) {
+            const match = taskLogRecords.find(record => record.run_id === currentRunId);
+            if (match) {
+                return match;
+            }
+        }
+        return taskLogRecords[0];
+    }
+
+    function updateExecutionMeta(record) {
+        if (!executionMetaRow || !executionMetaContent) {
+            return;
+        }
+        if (!record) {
+            executionMetaContent.innerHTML = '';
+            executionMetaRow.style.display = 'none';
+            return;
+        }
+
+        const statusText = getStatusText(record.status || 'pending');
+        const startTime = record.start_time ? new Date(record.start_time).toLocaleString() : '未知';
+        const endTime = record.end_time ? new Date(record.end_time).toLocaleString() : (record.status === 'running' ? '进行中' : '未知');
+        const durationText = typeof record.duration === 'number' ? `${record.duration.toFixed(1)} 秒` : '未知';
+        const runIdShort = record.run_id ? record.run_id.slice(0, 12) : '无';
+        const logSize = typeof record.log_size === 'number' ? formatBytes(record.log_size) : '未知';
+
+        executionMetaContent.innerHTML = `
+            <span><strong>执行状态:</strong> ${statusText}</span>
+            <span><strong>开始:</strong> ${startTime}</span>
+            <span><strong>结束:</strong> ${endTime}</span>
+            <span><strong>耗时:</strong> ${durationText}</span>
+            <span><strong>运行ID:</strong> ${runIdShort}</span>
+            <span><strong>日志大小:</strong> ${logSize}</span>
+        `;
+        executionMetaRow.style.display = currentLogType === 'task' ? 'block' : 'none';
+    }
+
+    async function loadTaskExecutions(taskId) {
+        if (!taskId) {
+            taskLogRecords = [];
+            updateExecutionSelect([], null);
+            updateExecutionMeta(null);
+            return;
+        }
+
+        try {
+            const response = await apiRequest(`/api/logs/${taskId}/executions?limit=50`);
+            const records = Array.isArray(response?.records) ? response.records : [];
+            taskLogRecords = records;
+            const selectedRun = updateExecutionSelect(records, currentRunId);
+            currentRunId = selectedRun;
+            updateExecutionMeta(getSelectedExecutionRecord());
+        } catch (error) {
+            console.error('加载执行记录失败:', error);
+        }
+    }
+
+    function handleTaskLogRecordEvent(record) {
+        if (!record || !record.task_id) {
+            return;
+        }
+        if (currentTaskId !== record.task_id) {
+            return;
+        }
+
+        taskLogRecords = [record, ...taskLogRecords.filter(item => item.run_id !== record.run_id)];
+        const selectedRun = updateExecutionSelect(taskLogRecords, record.run_id);
+        currentRunId = selectedRun;
+        updateExecutionMeta(getSelectedExecutionRecord());
+
+        if (currentLogType === 'task' && (!currentRunId || currentRunId === record.run_id)) {
+            loadLogs();
+        }
+    }
+
+    function handleTaskStatusEvent(eventData) {
+        if (!eventData || !eventData.task_id) {
+            return;
+        }
+
+        if (taskSelectElement) {
+            const option = Array.from(taskSelectElement.options).find(opt => opt.value === eventData.task_id);
+            if (option) {
+                const baseName = option.dataset.name || option.textContent.replace(/\s*\(.+\)$/, '').trim();
+                option.textContent = `${baseName} (${getStatusText(eventData.status)})`;
+            }
+        }
+
+        if (currentTaskId === eventData.task_id && Array.isArray(taskLogRecords)) {
+            const record = taskLogRecords.find(item => item.run_id === eventData.run_id);
+            if (record) {
+                if (eventData.status) {
+                    record.status = eventData.status;
+                }
+                if (eventData.history) {
+                    if (eventData.history.end_time) {
+                        record.end_time = eventData.history.end_time;
+                    }
+                    if (typeof eventData.history.duration === 'number') {
+                        record.duration = eventData.history.duration;
+                    }
+                    if (typeof eventData.history.success === 'boolean') {
+                        record.success = eventData.history.success;
+                    }
+                }
+                updateExecutionMeta(getSelectedExecutionRecord());
+            }
+        }
+    }
+
     // 初始化页面
-    document.addEventListener('DOMContentLoaded', function() {
-        loadTaskList();
+    document.addEventListener('DOMContentLoaded', async function() {
+        initializeLogElements();
+        registerLogEventHandlers();
+        await loadTaskList();
         setupEventListeners();
         startAutoRefreshLogs();
     });
@@ -196,23 +428,52 @@
     // 设置事件监听器
     function setupEventListeners() {
         // 日志类型切换
-        document.getElementById('log-type-select').addEventListener('change', function() {
+        document.getElementById('log-type-select').addEventListener('change', async function() {
             currentLogType = this.value;
             const taskContainer = document.getElementById('task-select-container');
-            taskContainer.style.display = this.value === 'task' ? 'block' : 'none';
-            
+            if (taskContainer) {
+                taskContainer.style.display = this.value === 'task' ? 'block' : 'none';
+            }
+            if (executionSelectContainer) {
+                executionSelectContainer.style.display = (this.value === 'task' && taskLogRecords.length) ? 'block' : 'none';
+            }
+            if (executionMetaRow) {
+                executionMetaRow.style.display = (this.value === 'task' && taskLogRecords.length) ? 'block' : 'none';
+            }
+
             if (this.value === 'system') {
-                loadLogs();
+                await loadLogs();
+            } else if (this.value === 'task' && currentTaskId) {
+                await loadTaskExecutions(currentTaskId);
+                await loadLogs();
             }
         });
 
         // 任务选择
-        document.getElementById('task-select').addEventListener('change', function() {
-            currentTaskId = this.value;
-            if (currentTaskId) {
-                loadLogs();
-            }
-        });
+        if (taskSelectElement) {
+            taskSelectElement.addEventListener('change', async function() {
+                currentTaskId = this.value || null;
+                currentRunId = null;
+                if (currentTaskId) {
+                    await loadTaskExecutions(currentTaskId);
+                    await loadLogs();
+                } else {
+                    updateExecutionSelect([], null);
+                    updateExecutionMeta(null);
+                    clearCurrentLog();
+                }
+            });
+        }
+
+        if (executionSelectElement) {
+            executionSelectElement.addEventListener('change', async function() {
+                currentRunId = this.value || null;
+                updateExecutionMeta(getSelectedExecutionRecord());
+                if (currentTaskId) {
+                    await loadLogs();
+                }
+            });
+        }
 
         // 搜索框回车事件
         document.getElementById('log-search').addEventListener('keypress', function(e) {
@@ -236,17 +497,28 @@
     async function loadTaskList() {
         try {
             const tasks = await apiRequest('/api/tasks');
-            const taskSelect = document.getElementById('task-select');
-            
-            taskSelect.innerHTML = '<option value="">选择任务...</option>';
-            
+            if (!taskSelectElement) {
+                taskSelectElement = document.getElementById('task-select');
+            }
+            if (!taskSelectElement) {
+                return;
+            }
+
+            const previousSelection = taskSelectElement.value || currentTaskId;
+            taskSelectElement.innerHTML = '<option value="">选择任务...</option>';
+
             tasks.forEach(task => {
                 const option = document.createElement('option');
                 option.value = task.id;
+                option.dataset.name = task.name;
                 option.textContent = `${task.name} (${getStatusText(task.status)})`;
-                taskSelect.appendChild(option);
+                taskSelectElement.appendChild(option);
             });
-            
+
+            if (previousSelection && tasks.some(task => task.id === previousSelection)) {
+                taskSelectElement.value = previousSelection;
+                currentTaskId = previousSelection;
+            }
         } catch (error) {
             console.error('加载任务列表失败:', error);
         }
@@ -263,17 +535,40 @@
                 logs = response.lines || [];
                 document.getElementById('log-source-info').textContent = '系统日志';
             } else if (currentLogType === 'task' && currentTaskId) {
-                // 任务日志
-                const response = await apiRequest(`/api/logs/${currentTaskId}?lines=${lines}`);
+                if (!taskLogRecords.length) {
+                    await loadTaskExecutions(currentTaskId);
+                }
+                const runQuery = currentRunId ? `&run_id=${encodeURIComponent(currentRunId)}` : '';
+                const response = await apiRequest(`/api/logs/${currentTaskId}?lines=${lines}${runQuery}`);
                 logs = response.lines || [];
                 lastTaskLogSource = response.source || null;
-                const taskName = document.getElementById('task-select').selectedOptions[0]?.textContent || '';
+                if (Array.isArray(response.records)) {
+                    taskLogRecords = response.records;
+                    const selectedRun = updateExecutionSelect(taskLogRecords, response.run_id || currentRunId);
+                    currentRunId = selectedRun;
+                } else if (response.run_id && !currentRunId) {
+                    currentRunId = response.run_id;
+                    updateExecutionSelect(taskLogRecords, currentRunId);
+                }
+                updateExecutionMeta(getSelectedExecutionRecord());
+
+                const taskOption = taskSelectElement?.selectedOptions?.[0];
+                const taskName = taskOption?.dataset?.name || taskOption?.textContent || '';
                 const sourceLabel = lastTaskLogSource === 'temp'
                     ? '（临时日志文件）'
                     : lastTaskLogSource === 'live'
                         ? '（实时日志缓存）'
                         : '';
-                document.getElementById('log-source-info').textContent = `任务日志: ${taskName}${sourceLabel}`;
+                const executionRecord = getSelectedExecutionRecord();
+                const executionLabel = executionRecord ? `执行: ${formatExecutionLabel(executionRecord)}` : '';
+                const infoParts = [`任务日志: ${taskName}`];
+                if (executionLabel) {
+                    infoParts.push(executionLabel);
+                }
+                if (sourceLabel) {
+                    infoParts.push(sourceLabel);
+                }
+                document.getElementById('log-source-info').textContent = infoParts.filter(Boolean).join(' · ');
             } else {
                 logs = [];
                 document.getElementById('log-source-info').textContent = '请选择任务';
@@ -395,8 +690,11 @@
     }
 
     // 刷新日志
-    function refreshLogs() {
-        loadLogs();
+    async function refreshLogs() {
+        if (currentLogType === 'task' && currentTaskId) {
+            await loadTaskExecutions(currentTaskId);
+        }
+        await loadLogs();
     }
 
     // 清空当前显示
@@ -470,9 +768,9 @@
         
         autoRefreshLogsTimer = setInterval(() => {
             if (autoRefreshLogsEnabled && (currentLogType === 'system' || currentTaskId)) {
-                loadLogs();
+                refreshLogs();
             }
-        }, 10000); // 每10秒刷新一次
+        }, 20000); // 每20秒刷新一次，实时更新通过事件流驱动
     }
 
     // 切换自动刷新
@@ -496,6 +794,7 @@
         if (autoRefreshLogsTimer) {
             clearInterval(autoRefreshLogsTimer);
         }
+        cleanupLogEventHandlers();
     });
 </script>
 {% endblock %}

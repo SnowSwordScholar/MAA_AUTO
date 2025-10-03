@@ -17,6 +17,7 @@ import random
 from .config import TaskConfig, ResourceGroup, config_manager, AppConfig, TriggerConfig
 from .executor import task_executor
 from .notification import notification_service
+from .events import event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,21 @@ class TaskScheduler:
         self.success_retry_tasks: Dict[str, asyncio.Task] = {}
         self.success_retry_counters: Dict[str, int] = {}
 
+    async def _notify_scheduler_state(self):
+        status = self.get_scheduler_status()
+        status["timestamp"] = datetime.now().isoformat()
+        await event_bus.publish({
+            "type": "scheduler_status",
+            "data": status
+        })
+
+    async def _notify_task_list(self):
+        await event_bus.publish({
+            "type": "task_list",
+            "data": self.get_task_list(),
+            "timestamp": datetime.now().isoformat()
+        })
+
     async def start(self):
         if self.is_running:
             logger.warning("调度器已在运行中")
@@ -200,6 +216,8 @@ class TaskScheduler:
         await self._flush_pending_window_tasks()
         self.worker_task = asyncio.create_task(self._worker_loop())
         logger.info(f"任务调度器已成功启动 (当前模式: {self.mode.value})")
+        await self._notify_scheduler_state()
+        await self._notify_task_list()
 
     async def stop(self):
         if not self.is_running:
@@ -221,6 +239,8 @@ class TaskScheduler:
 
         await self._cancel_retry_handles()
         logger.info("任务调度器已停止")
+        await self._notify_scheduler_state()
+        await self._notify_task_list()
 
     async def _purge_task(self, task_id: str):
         await self.task_queue.remove_task(task_id)
@@ -306,6 +326,8 @@ class TaskScheduler:
                 if key in valid_trigger_keys
             }
         logger.info(f"已加载并调度 {len(self.scheduler.get_jobs())} 个启用的任务触发器")
+        await self._notify_scheduler_state()
+        await self._notify_task_list()
 
     def _schedule_trigger(self, task: TaskConfig, trigger_key: str, trigger: TriggerConfig):
         """根据触发器配置创建调度任务"""
@@ -642,6 +664,7 @@ class TaskScheduler:
             cancelled = await self.executor.cancel_task(task_id, reason=reason)
         if purge_queue:
             await self._purge_task(task_id)
+        await self._notify_scheduler_state()
         return cancelled
 
     async def _execute_and_handle_completion(self, task_item: TaskQueueItem):
@@ -1068,6 +1091,8 @@ class TaskScheduler:
             logger.info("调度器已切换到单任务模式，自动调度暂停并终止所有正在执行的任务")
         else:
             logger.info("调度器已切换到自动调度模式")
+        await self._notify_scheduler_state()
+        await self._notify_task_list()
 
     def get_scheduler_status(self) -> Dict:
         return {

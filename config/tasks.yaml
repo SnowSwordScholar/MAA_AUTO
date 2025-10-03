@@ -1,11 +1,12 @@
 tasks:
 - id: test-maa-task
-  name: 肉鸽 Sami
-  description: ''
+  name: 肉鸽
+  description: 'maa roguelike <theme>: 自动集成战略，<theme> 是集成战略的主题，可选值为 Phantom，Mizuki，Sami，Sarkaz
+    以及 JieGarden.'
   enabled: true
   priority: 5
   resource_group: redroid
-  main_command: /root/.cargo/bin/maa roguelike Sami -v
+  main_command: /root/.cargo/bin/maa roguelike JieGarden -v
   enable_adb_wakeup: true
   adb_device_id: 127.0.0.1:35555
   enable_resolution_switch: true

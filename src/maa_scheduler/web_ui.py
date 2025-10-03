@@ -3,13 +3,17 @@ Web 控制界面模块
 提供任务管理、监控、配置的 Web 界面
 """
 
+import asyncio
+import json
 import logging
 import uuid
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 
+from datetime import datetime
+
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -18,6 +22,8 @@ from .config import AppConfig, TaskConfig, config_manager
 from .scheduler import scheduler, SchedulerMode
 from .executor import task_executor
 from .notification import notification_service
+from .metrics import get_system_metrics
+from .events import event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +70,57 @@ async def settings_page(request: Request):
 @app.get("/api/status")
 async def get_status():
     """获取系统状态"""
-    return scheduler.get_scheduler_status()
+    status = scheduler.get_scheduler_status()
+    status["metrics"] = get_system_metrics()
+    status["timestamp"] = datetime.now().isoformat()
+    return status
+
+
+@app.get("/api/system-metrics")
+async def system_metrics():
+    """获取系统监控指标"""
+    return get_system_metrics()
+
+
+@app.get("/api/events")
+async def stream_events(request: Request):
+    """服务端事件流，用于向前端推送实时更新"""
+
+    async def event_generator():
+        queue = await event_bus.subscribe()
+        try:
+            initial_payload = {
+                "type": "scheduler_status",
+                "data": get_status_data_with_metrics()
+            }
+            yield format_sse(initial_payload)
+
+            while True:
+                event = await queue.get()
+                if await request.is_disconnected():
+                    break
+                yield format_sse(event)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await event_bus.unsubscribe(queue)
+
+    def format_sse(payload: Dict[str, Any]) -> str:
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    def get_status_data_with_metrics() -> Dict[str, Any]:
+        data = scheduler.get_scheduler_status()
+        data["metrics"] = get_system_metrics()
+        data["timestamp"] = datetime.now().isoformat()
+        return data
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive"
+    }
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
 
 class ModeUpdate(BaseModel):
@@ -254,42 +310,69 @@ async def save_app_config(config: AppConfig):
     try:
         config_manager.save_config(config)
         await scheduler.reload_tasks()
+        task_executor.refresh_log_settings()
         return {"message": "配置保存成功，部分设置可能需要重启应用生效"}
     except Exception as e:
         logger.error(f"保存配置失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"保存配置失败: {e}")
 
 # 日志和通知
-@app.get("/api/logs/{task_id}")
-async def get_task_logs(task_id: str, lines: int = 100):
-    """获取任务日志（优先临时日志，回退到实时缓冲）"""
+@app.get("/api/logs/{task_id}/executions")
+async def list_task_log_executions(task_id: str, limit: Optional[int] = 50):
     try:
-        temp_log_file = task_executor.get_temp_log_file(task_id)
-        if temp_log_file and temp_log_file.exists():
-            with open(temp_log_file, 'r', encoding='utf-8', errors='ignore') as f:
-                all_lines = f.readlines()
-            recent_lines = all_lines[-lines:]
-            return {
-                "lines": recent_lines,
-                "total_lines": len(all_lines),
-                "source": "temp"
-            }
+        records = task_executor.get_log_records(task_id, limit)
+        return {
+            "records": records,
+            "count": len(records)
+        }
+    except Exception as e:
+        logger.error(f"获取日志执行记录失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取任务日志记录失败")
+
+
+@app.get("/api/logs/{task_id}")
+async def get_task_logs(task_id: str, lines: int = 100, run_id: Optional[str] = None):
+    """获取任务日志（优先持久化文件，回退到实时缓冲）"""
+    try:
+        records = task_executor.get_log_records(task_id)
+        selected_record: Optional[Dict[str, Any]] = None
+        if run_id:
+            selected_record = next((r for r in records if r.get("run_id") == run_id), None)
+        if not selected_record and records:
+            selected_record = records[0]
+            run_id = selected_record.get("run_id")
+
+        response: Dict[str, Any] = {
+            "lines": [],
+            "total_lines": 0,
+            "source": "none",
+            "records": records,
+            "run_id": run_id,
+        }
+
+        if selected_record and selected_record.get("log_file"):
+            log_path = Path(selected_record["log_file"])
+            if log_path.exists():
+                with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    all_lines = f.readlines()
+                response["total_lines"] = len(all_lines)
+                response["lines"] = [line.rstrip('\n') for line in all_lines[-lines:]]
+                response["source"] = "file"
+                response["log_file"] = str(log_path)
+                return response
 
         live_lines = task_executor.get_live_logs(task_id, limit=lines)
         if live_lines:
-            return {
+            response.update({
                 "lines": live_lines,
                 "total_lines": len(live_lines),
                 "source": "live",
                 "message": "显示最近一次任务执行的实时日志缓存"
-            }
+            })
+            return response
 
-        return {
-            "lines": [],
-            "total_lines": 0,
-            "source": "none",
-            "message": "未找到该任务的日志记录"
-        }
+        response["message"] = "未找到该任务的日志记录"
+        return response
     except Exception as e:
         logger.error(f"获取任务日志失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="获取任务日志失败")

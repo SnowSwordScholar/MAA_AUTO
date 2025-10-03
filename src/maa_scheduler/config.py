@@ -40,7 +40,9 @@ class LoggingSettings(BaseModel):
     level: str = Field(default="INFO", description="日志级别")
     file: str = Field(default="logs/maa_scheduler.log", description="日志文件路径")
     max_size: str = Field(default="10MB", description="日志文件最大大小")
-    backup_count: int = Field(default=5, description="日志备份数量")
+    backup_count: int = Field(default=5, description="系统日志备份数量")
+    task_backup_count: int = Field(default=20, description="每个任务保留的日志文件数量")
+    task_max_age_days: Optional[int] = Field(default=30, description="任务日志最大保留天数")
 
 class WebhookConfig(BaseModel):
     """Webhook 配置"""
