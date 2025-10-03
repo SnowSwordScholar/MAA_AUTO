@@ -10,7 +10,9 @@
 
 The project started as a helper for MAA automation and now supports BAAH along with any other deployable terminal program. You can configure multiple scripts with the same queue, trigger, and monitoring workflow, all managed through a web UI.
 
-![Screenshot](screenshots/maa_auto.png)
+![Screenshot](screenshots/maa_auto_en.png)
+
+The main use case for this project is: Your control terminal is installed on Linux, and you want to control MAA/BAAH or other terminal programs in multiple containers to execute preset tasks during your desired time slots, with control via a web panel. This tool serves only as a scheduler, i.e., determining which tasks to run within specific time frames and sending notifications upon meeting certain conditions (successful execution, failed execution, or a 6-star operator from public recruitment). You will still need to configure the specific task payload yourself.
 
 ## Features
 
@@ -172,6 +174,10 @@ A ready-to-edit unit file lives in `config/systemd/maa-scheduler.service`.
    - Make sure the port is open.
    - Review firewall rules.
    - Inspect logs in `logs/maa_scheduler.log`.
+
+   ## Disclaimer
+
+   This project is provided for educational only. It does not endorse, encourage, or guarantee compliance with any third-party terms of service. You are solely responsible for ensuring that your task configuration and usage comply with local laws and with the agreements of the games or services you automate. The authors and contributors assume no liability for bans, data loss, or any other damages arising from the use of this software. If you are unsure, stop using the tool and consult the relevant vendor.
 
 ## Project layout
 
