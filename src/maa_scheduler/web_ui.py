@@ -178,10 +178,7 @@ async def update_task(task_id: str, task_config: TaskConfig):
 async def delete_task(task_id: str):
     """删除任务"""
     try:
-        # 如果任务正在运行，先取消
-        if task_id in task_executor.get_running_tasks():
-            await task_executor.cancel_task(task_id)
-        
+        await scheduler.cancel_task(task_id, reason="delete")
         config_manager.delete_task(task_id)
         await scheduler.reload_tasks()
     except ValueError as e:
@@ -213,10 +210,10 @@ async def run_task_manually(task_id: str):
 async def cancel_running_task(task_id: str):
     """取消正在运行的任务"""
     try:
-        if task_id not in task_executor.get_running_tasks():
-            raise HTTPException(status_code=409, detail="任务当前未在运行")
-
-        await task_executor.cancel_task(task_id)
+        is_running = task_id in task_executor.get_running_tasks()
+        await scheduler.cancel_task(task_id, reason="manual")
+        if not is_running:
+            return {"message": "任务当前未在运行，已确保从队列中移除"}
         return {"message": "取消任务请求已发送"}
     except HTTPException:
         raise

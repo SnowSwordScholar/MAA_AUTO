@@ -51,7 +51,7 @@ class TaskExecutor:
         self.task_results: Dict[str, TaskResult] = {}
         self.temp_log_files: Dict[str, Path] = {}
         self.live_logs: Dict[str, Deque[str]] = {}
-        self.task_history: Deque[Dict[str, Any]] = deque(maxlen=50)
+        self.task_history: Deque[Dict[str, Any]] = deque(maxlen=200)
         try:
             self.last_known_resolution: Optional[str] = config_manager.get_config().app.last_device_resolution
         except Exception:

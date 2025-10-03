@@ -64,6 +64,28 @@ class TaskQueue:
                 logger.info(f"从队列获取任务: {item.task.name}, 剩余队列长度: {len(self.queue)}")
                 return item
             return None
+
+    async def remove_task(self, task_id: str) -> int:
+        async with self.lock:
+            original_length = len(self.queue)
+            if original_length == 0:
+                return 0
+            self.queue = [item for item in self.queue if item.task.id != task_id]
+            removed = original_length - len(self.queue)
+            if removed:
+                logger.info(f"已从队列移除任务 '{task_id}' 的 {removed} 个待执行项，当前队列长度: {len(self.queue)}")
+            return removed
+
+    async def retain_tasks(self, valid_ids: Set[str]) -> int:
+        async with self.lock:
+            original_length = len(self.queue)
+            if original_length == 0:
+                return 0
+            self.queue = [item for item in self.queue if item.task.id in valid_ids]
+            removed = original_length - len(self.queue)
+            if removed:
+                logger.info(f"清理队列中无效任务 {removed} 个，当前队列长度: {len(self.queue)}")
+            return removed
     
     def size(self) -> int:
         return len(self.queue)
@@ -200,6 +222,48 @@ class TaskScheduler:
         await self._cancel_retry_handles()
         logger.info("任务调度器已停止")
 
+    async def _purge_task(self, task_id: str):
+        await self.task_queue.remove_task(task_id)
+
+        self.pending_window_tasks = [item for item in self.pending_window_tasks if item[0] != task_id]
+        self.preempted_tasks.discard(task_id)
+        self.active_trigger_keys.pop(task_id, None)
+
+        prefix = f"{task_id}:"
+
+        def _purge_dict(store: Dict[str, Any]):
+            removed = False
+            for key in list(store.keys()):
+                if key.startswith(prefix):
+                    store.pop(key, None)
+                    removed = True
+            if removed:
+                logger.debug(f"清理任务 '{task_id}' 相关的状态: {store.__class__.__name__}")
+
+        _purge_dict(self.retry_counters)
+        _purge_dict(self.retry_notified)
+        _purge_dict(self.success_retry_counters)
+
+        for key in list(self.retry_tasks.keys()):
+            if key.startswith(prefix):
+                handle = self.retry_tasks.pop(key)
+                handle.cancel()
+
+        for key in list(self.success_retry_tasks.keys()):
+            if key.startswith(prefix):
+                handle = self.success_retry_tasks.pop(key)
+                handle.cancel()
+
+        for key in list(self.trigger_last_run.keys()):
+            if key.startswith(prefix):
+                self.trigger_last_run.pop(key, None)
+
+        self.job_trigger_lookup = {
+            job_id: trigger_key
+            for job_id, trigger_key in self.job_trigger_lookup.items()
+            if not trigger_key or not trigger_key.startswith(prefix)
+        }
+
     async def reload_tasks(self):
         logger.info("正在重新加载任务配置...")
         config = config_manager.get_config()
@@ -214,6 +278,13 @@ class TaskScheduler:
         await self._cancel_retry_handles()
         self.pending_window_tasks.clear()
         self.task_configs = {task.id: task for task in config.tasks}
+
+        valid_task_ids = set(self.task_configs.keys())
+        await self.task_queue.retain_tasks(valid_task_ids)
+
+        for task_id, task in self.task_configs.items():
+            if not task.enabled:
+                await self.cancel_task(task_id, reason="disabled")
 
         for task in self.task_configs.values():
             if not task.enabled:
@@ -506,8 +577,13 @@ class TaskScheduler:
                 if not task_item:
                     await asyncio.sleep(1)
                     continue
-                task = task_item.task
+                task = self.task_configs.get(task_item.task.id, task_item.task)
+                task_item.task = task
                 trigger_key = task_item.trigger_key
+
+                if not task.enabled:
+                    logger.info(f"任务 '{task.name}' 已被禁用，跳过队列中的待执行项")
+                    continue
 
                 if not await self.resource_manager.can_start_task(task):
                     logger.info(f"资源不足，任务 '{task.name}' 重新加入队列")
@@ -559,6 +635,14 @@ class TaskScheduler:
             await self.resource_manager.release_resource(task)
             logger.error(f"创建任务执行协程失败: {e}")
             raise
+
+    async def cancel_task(self, task_id: str, *, reason: str = "manual", purge_queue: bool = True) -> bool:
+        cancelled = False
+        if task_id in self.executor.get_running_tasks():
+            cancelled = await self.executor.cancel_task(task_id, reason=reason)
+        if purge_queue:
+            await self._purge_task(task_id)
+        return cancelled
 
     async def _execute_and_handle_completion(self, task_item: TaskQueueItem):
         task = task_item.task
@@ -912,7 +996,7 @@ class TaskScheduler:
             reason
         )
         await asyncio.gather(
-            *(self.executor.cancel_task(task_id, reason=reason) for task_id in running_task_ids)
+            *(self.cancel_task(task_id, reason=reason, purge_queue=False) for task_id in running_task_ids)
         )
 
     @staticmethod
